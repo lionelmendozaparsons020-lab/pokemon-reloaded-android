@@ -135,3 +135,37 @@ fn bag_modal_in_same_room_restores_navigation_then_exits_cleanly() {
     assert!(!touch_navigation::bag_open());
     assert_eq!(tc::current_context(),tc::WORLD);
 }
+
+
+#[test]
+fn enter_and_n_list_swipes_are_immediate_bounded_and_reverse_without_lag() {
+    use touch_controls as tc;
+    // Clear any earlier bag/modal tests without relying on test execution order.
+    touch_navigation::report(900,-1,false);
+    tc::set_room(900);
+    tc::set_box_open(false);
+    tc::set_modal_id(-1);
+    touch_navigation::report(100,7778,false);
+    tc::set_room(100);
+    tc::set_modal_id(7778);
+    assert!(touch_navigation::active());
+    assert!(touch_navigation::begin(201,200.0,500.0,720.0));
+    assert!(touch_navigation::moved(201,200.0,100.0));
+    // Navigation keys are ready *now*: no extra 55ms queue throttle.
+    assert_eq!(touch_navigation::next_key(),Some(input::Key::DownArrow));
+    assert!(touch_navigation::moved(201,200.0,640.0));
+    assert_eq!(touch_navigation::next_key(),Some(input::Key::UpArrow),
+        "reversing a swipe must discard steps going the old way");
+    assert!(touch_navigation::moved(201,200.0,80.0));
+    let mut following=0;
+    while let Some(key)=touch_navigation::next_key(){
+        assert_eq!(key,input::Key::DownArrow);
+        following+=1;
+        assert!(following<=6,"never queue an unbounded delayed scroll");
+    }
+    assert!(touch_navigation::end(201,200.0,80.0).is_none());
+    touch_navigation::report(100,-1,false);
+    tc::set_modal_id(-1);
+    assert!(!touch_navigation::active());
+    assert_eq!(touch_navigation::next_key(),None);
+}
