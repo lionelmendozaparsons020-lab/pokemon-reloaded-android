@@ -1,5 +1,5 @@
 //! Recognize taps before generating a click; scrolling emits only directional keys.
-use std::{collections::VecDeque,sync::Mutex,time::{Duration,Instant}};
+use std::{collections::VecDeque,sync::{Mutex,atomic::{AtomicU64,Ordering}},time::{Duration,Instant}};
 use ramen::input::Key;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Identity{pub room:i32,pub modal:i32}
@@ -8,6 +8,8 @@ static BAG:Mutex<Option<i32>>=Mutex::new(None);
 // A bag opened as a modal stays active only while that modal is present.
 static BAG_MODAL:Mutex<Option<i32>>=Mutex::new(None);
 static ARMED:Mutex<Option<(Identity,Instant)>>=Mutex::new(None);
+static FRAME:AtomicU64=AtomicU64::new(0);
+pub fn frame()->u64{FRAME.load(Ordering::Relaxed)}
 pub fn identity()->Identity{*IDENTITY.lock().unwrap()}
 pub fn arm_bag(){*ARMED.lock().unwrap()=Some((identity(),Instant::now()));}
 pub fn disarm_bag(){*ARMED.lock().unwrap()=None;}
@@ -37,6 +39,7 @@ pub fn report(room:i32,modal:i32,named_bag:bool){
         *bag=Some(room);
         *bag_modal=None;
     }
+    FRAME.fetch_add(1,Ordering::Relaxed);
 }
 pub fn bag_open()->bool{BAG.lock().unwrap().is_some_and(|id|id==identity().room)}
 pub fn active()->bool{crate::touch_controls::current_context()==crate::touch_controls::MENU_NAV&&!crate::touch_controls::info_window_open()}
