@@ -175,3 +175,15 @@ fn finger_swipes_scroll_rapidly_without_large_delayed_key_backlog() {
     tc::set_modal_id(-1);
     nav::report(100,-1,false);
 }
+
+#[test]
+fn modern_v2_keeps_original_and_classic_visual_styles_available() {
+    use touch_appearance::{Style, settings, load};
+    load("touch-appearance-v1\nstyle=modern_v2\nanimations=1\nhaptics=1\n");
+    assert!(settings().style == Style::ModernV2);
+    load("touch-appearance-v1\nstyle=modern\n");
+    assert!(settings().style == Style::Modern);
+    load("touch-appearance-v1\nstyle=classic\n");
+    assert!(settings().style == Style::Classic);
+    load("touch-appearance-v1\nstyle=modern\n");
+}
