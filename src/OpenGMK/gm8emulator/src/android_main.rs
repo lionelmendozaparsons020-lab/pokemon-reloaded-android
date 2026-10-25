@@ -366,7 +366,6 @@ static POINTER_CONTROLS: Mutex<Option<HashMap<i32, usize>>> = Mutex::new(None);
 
 /// The pointer the party wheel is following, if any.
 static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
-static FIELD_POINTER: Mutex<Option<(i32,usize)>> = Mutex::new(None);
 
 /// Sends a key as a quick tap. The engine defers the release to the end of the poll, so the game
 /// still sees it as pressed.
@@ -481,9 +480,19 @@ fn pointer_down(id: i32, x: f32, y: f32) {
         crate::field_controls::toggle();touch_feedback();
         SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
     }
-    if crate::field_controls::open(){
-        if let Some(slot)=crate::field_controls::item_at(x,y,wf,hf){let mut owner=FIELD_POINTER.lock().unwrap();if owner.is_none(){*owner=Some((id,slot));touch_feedback();}}
-        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
+    if crate::field_controls::open() {
+        // Exploration SEL is a latched, tap-to-select menu. Commit the key on DOWN,
+        // rather than requiring a perfectly stationary DOWN/UP in the same polygon.
+        // A slight finger movement must not make a valid hexagon selection disappear.
+        if let Some(slot) = crate::field_controls::item_at(x, y, wf, hf) {
+            tap_key(crate::field_controls::KEYS[slot]);
+            crate::field_controls::close();
+            touch_feedback();
+        } else {
+            crate::field_controls::close(); // tapping outside dismisses it
+        }
+        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+        return
     }
     if hit.is_none()&&crate::touch_navigation::active(){
         if !crate::touch_navigation::begin(id,x,y,hf){SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);}return
@@ -529,8 +538,6 @@ fn pointer_up(id: i32, x: f32, y: f32) {
     if crate::touch_navigation::owns(id){
         if let Some((x,y))=crate::touch_navigation::end(id,x,y){android::push_input(ramen::platform::android::InputEvent::PointerMoved{x,y});}return
     }
-    let selected={let mut owner=FIELD_POINTER.lock().unwrap();if owner.is_some_and(|(pointer,_)|pointer==id){owner.take().map(|(_,slot)|slot)}else{None}};
-    if let Some(slot)=selected{let(w,h)=android::window_size();if crate::field_controls::open()&&crate::field_controls::item_at(x,y,w as f32,h as f32)==Some(slot){tap_key(crate::field_controls::KEYS[slot]);crate::field_controls::close();}}
 
     let closes_wheel = {
         let mut owner = WHEEL_PTR.lock().unwrap();
@@ -686,6 +693,9 @@ fn pointer_is_control(id: i32) -> bool {
 static MOVEMENT_PTR: Mutex<Option<i32>> = Mutex::new(None);
 /// Which arrow keys the movement control is holding (bit 0 up, 1 down, 2 left, 3 right).
 static MOVEMENT_STATE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+// Menu lists consume individual arrow presses. Remember when to repeat a held
+// direction, but never repeat movement in the overworld or during combat.
+static MENU_REPEAT_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
 const MOVEMENT_KEYS: [Key; 4] = [Key::UpArrow, Key::DownArrow, Key::LeftArrow, Key::RightArrow];
 
@@ -724,6 +734,14 @@ fn movement_update(x: f32, y: f32) {
         }
     }
     MOVEMENT_STATE.store(state, Ordering::Relaxed);
+    if crate::touch_controls::current_context() == crate::touch_controls::MENU_NAV {
+        if new_direction || state == 0 {
+            *MENU_REPEAT_AT.lock().unwrap() =
+                (state != 0).then(|| Instant::now() + Duration::from_millis(280));
+        }
+    } else {
+        *MENU_REPEAT_AT.lock().unwrap() = None;
+    }
     // The D-pad gives a short tap each time a direction is marked; the analog stick stays silent.
     if new_direction && crate::touch_controls::move_mode() == crate::touch_controls::MoveMode::Dpad {
         touch_feedback();
@@ -745,6 +763,7 @@ fn movement_update(x: f32, y: f32) {
 
 fn movement_release() {
     use std::sync::atomic::Ordering;
+    *MENU_REPEAT_AT.lock().unwrap() = None;
     crate::touch_controls::set_move_dirs([false; 4]);
     let state = MOVEMENT_STATE.swap(0, Ordering::Relaxed);
     for i in 0..4 {
@@ -754,6 +773,24 @@ fn movement_release() {
     }
     crate::touch_controls::set_movement_offset(0.0, 0.0);
     *MOVEMENT_PTR.lock().unwrap() = None;
+}
+
+/// Continue stepping through a bag/list when a direction is held on the on-screen
+/// stick. Repeated DOWN events refresh GM's pressed edge without releasing the
+/// joystick's held state; the normal movement path is unchanged.
+fn repeat_menu_movement() {
+    if crate::touch_controls::current_context() != crate::touch_controls::MENU_NAV { return }
+    let state = MOVEMENT_STATE.load(std::sync::atomic::Ordering::Relaxed);
+    if state == 0 { return }
+    let now = Instant::now();
+    let mut next = MENU_REPEAT_AT.lock().unwrap();
+    if !next.is_some_and(|at| now >= at) { return }
+    *next = Some(now + Duration::from_millis(115));
+    for (i, &key) in MOVEMENT_KEYS.iter().enumerate() {
+        if state & (1 << i) != 0 && !crate::touch_controls::key_held_by_buttons(key) {
+            android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
+        }
+    }
 }
 
 fn release_touch_profile() {
@@ -779,7 +816,6 @@ fn release_touch_profile() {
     if let Some(id) = WHEEL_PTR.lock().unwrap().take() { ids.insert(id); }
     crate::touch_controls::set_wheel_open(false);
     crate::field_controls::close();
-    if let Some((id,_))=FIELD_POINTER.lock().unwrap().take(){ids.insert(id);}
     if let Some(id)=crate::touch_navigation::cancel(){ids.insert(id);}
     if let Some((x,y))=crate::touch_navigation::cancel_pointer(){
         android::push_input(ramen::platform::android::InputEvent::PointerUp{x,y,button:0});
@@ -1541,6 +1577,7 @@ pub fn android_entry(app: AndroidApp) {
             input_identity = identity;
             input_box_active = box_active;
         }
+        repeat_menu_movement();
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
         if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
