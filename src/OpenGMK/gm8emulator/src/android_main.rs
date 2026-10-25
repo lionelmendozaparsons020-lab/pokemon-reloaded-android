@@ -366,34 +366,55 @@ static POINTER_CONTROLS: Mutex<Option<HashMap<i32, usize>>> = Mutex::new(None);
 
 /// The pointer the party wheel is following, if any.
 static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
-static FIELD_POINTER: Mutex<Option<(i32,usize)>> = Mutex::new(None);
 
-/// Synthetic key taps need a real held interval. The emulator's one-poll deferred
-/// release is too short for the game's slower item/field-menu loops on Android.
-static TAP_KEY_UPS: Mutex<Vec<(Instant, Key)>> = Mutex::new(Vec::new());
-const TAP_KEY_DURATION: Duration = Duration::from_millis(95);
-fn tap_key(key: ramen::input::Key) {
+/// Android key events may arrive between game frames; a tap must survive the next sample.
+/// Repeated bag arrows require DOWN and UP in separate frames, not one held key forever.
+enum TapPhase {
+    Idle,
+    Pressed { key: Key, started: Instant, frame: u64 },
+    Released { since: Instant, frame: u64 },
+}
+struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<Key> }
+static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
+    phase: TapPhase::Idle, queued: std::collections::VecDeque::new(),
+});
+const TAP_HOLD: Duration = Duration::from_millis(55);
+const TAP_GAP: Duration = Duration::from_millis(25);
+
+fn tap_key(key: Key) {
     if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
-    let mut pending = TAP_KEY_UPS.lock().unwrap();
-    // Never strand an already-pressed key if the player taps the same slot again.
-    if let Some(existing) = pending.iter_mut().find(|(_, held)| *held == key) {
-        existing.0 = Instant::now() + TAP_KEY_DURATION;
-        return;
-    }
-    android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
-    pending.push((Instant::now() + TAP_KEY_DURATION, key));
+    let mut taps = TAPS.lock().unwrap();
+    if taps.queued.len() < 32 { taps.queued.push_back(key); }
 }
 fn flush_tapped_keys() {
-    let now = Instant::now();
-    let mut pending = TAP_KEY_UPS.lock().unwrap();
-    pending.retain(|(until, key)| {
-        if *until > now { return true }
-        // Don't release a key that became held by a physical touch in the meantime.
-        if !crate::touch_controls::key_held_by_buttons(*key) && !joystick_holds(*key) {
-            android::push_input(ramen::platform::android::InputEvent::KeyUp { key: *key });
+    let mut taps = TAPS.lock().unwrap();
+    let frame = crate::touch_navigation::frame();
+    let phase = std::mem::replace(&mut taps.phase, TapPhase::Idle);
+    taps.phase = match phase {
+        TapPhase::Pressed { key, started, frame: first_frame } => {
+            let elapsed = started.elapsed();
+            if elapsed >= TAP_HOLD && (frame != first_frame || elapsed >= Duration::from_millis(170)) {
+                if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
+                    android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
+                }
+                TapPhase::Released { since: Instant::now(), frame }
+            } else { TapPhase::Pressed { key, started, frame: first_frame } }
         }
-        false
-    });
+        TapPhase::Released { since, frame: release_frame } => {
+            if since.elapsed() >= TAP_GAP && (frame != release_frame || since.elapsed() >= Duration::from_millis(170)) {
+                TapPhase::Idle
+            } else { TapPhase::Released { since, frame: release_frame } }
+        }
+        TapPhase::Idle => TapPhase::Idle,
+    };
+    if matches!(taps.phase, TapPhase::Idle) {
+        while let Some(key) = taps.queued.pop_front() {
+            if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { continue }
+            android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
+            taps.phase = TapPhase::Pressed { key, started: Instant::now(), frame };
+            break
+        }
+    }
 }
 
 fn joystick_holds(key: Key) -> bool {
@@ -485,8 +506,22 @@ fn pointer_down(id: i32, x: f32, y: f32) {
         return
     }
     let on_movement = wf > 0.0 && hf > 0.0 && crate::touch_controls::movement_hit(x / wf, y / hf, wf, hf);
-    // Any *other* touch while the party wheel is up cancels it - but not the movement stick: while
-    // walking the player keeps touching and lifting it, and that must not close the wheel.
+    let hit = if wf > 0.0 && hf > 0.0 { crate::touch_controls::hit(x / wf, y / hf, wf, hf) } else { None };
+    // SEL takes precedence over the joystick and any ordinary buttons behind its artwork.
+    // Select on DOWN so canceled UPs and small finger drifts cannot drop a number press.
+    if crate::field_controls::open() {
+        if hit.is_some_and(|i| crate::touch_controls::controls()[i].name == crate::field_controls::NAME) {
+            crate::field_controls::close();
+        } else if let Some(slot) = crate::field_controls::item_at(x, y, wf, hf) {
+            tap_key(crate::field_controls::KEYS[slot]);
+            crate::field_controls::close();
+            touch_feedback();
+        } else if !crate::field_controls::inside_wheel(x, y, wf, hf) {
+            crate::field_controls::close();
+        }
+        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+        return
+    }
     if crate::touch_controls::wheel_open() && *WHEEL_PTR.lock().unwrap() != Some(id) && !on_movement {
         crate::touch_controls::set_wheel_open(false);
         WHEEL_PTR.lock().unwrap().take();
@@ -496,20 +531,11 @@ fn pointer_down(id: i32, x: f32, y: f32) {
         movement_update(x, y);
         return
     }
-    let hit = if w > 0 && h > 0 { crate::touch_controls::hit(x / wf, y / hf, wf, hf) } else { None };
-    if hit.is_some_and(|i|crate::touch_controls::controls()[i].name==crate::field_controls::NAME){
-        crate::field_controls::toggle();touch_feedback();
-        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
-    }
-    if crate::field_controls::open(){
-        if let Some(slot)=crate::field_controls::item_at(x,y,wf,hf){
-            let mut owner=FIELD_POINTER.lock().unwrap();
-            if owner.is_none(){*owner=Some((id,slot));touch_feedback();}
-        } else if !crate::field_controls::inside_wheel(x,y,wf,hf) {
-            // An outside tap closes the latched selector without pressing the game.
-            crate::field_controls::close();
-        }
-        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
+    if hit.is_some_and(|i| crate::touch_controls::controls()[i].name == crate::field_controls::NAME) {
+        crate::field_controls::toggle();
+        touch_feedback();
+        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+        return
     }
     if hit.is_none()&&crate::touch_navigation::active(){
         if !crate::touch_navigation::begin(id,x,y,hf){SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);}return
@@ -555,22 +581,6 @@ fn pointer_up(id: i32, x: f32, y: f32) {
     if crate::touch_navigation::owns(id){
         if let Some((x,y))=crate::touch_navigation::end(id,x,y){android::push_input(ramen::platform::android::InputEvent::PointerMoved{x,y});}return
     }
-    let selected={let mut owner=FIELD_POINTER.lock().unwrap();if owner.is_some_and(|(pointer,_)|pointer==id){owner.take().map(|(_,slot)|slot)}else{None}};
-    if let Some(slot)=selected {
-        let(w,h)=android::window_size();
-        if crate::field_controls::open() {
-            // Preserve the initial hexagon for slight finger drift into its artwork's
-            // transparent gaps; allow deliberate slides to another hexagon.
-            if crate::field_controls::inside_wheel(x,y,w as f32,h as f32) {
-                let picked=crate::field_controls::item_at(x,y,w as f32,h as f32).unwrap_or(slot);
-                tap_key(crate::field_controls::KEYS[picked]);
-            }
-            crate::field_controls::close();
-        }
-        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).remove(&id);
-        return
-    }
-
     let closes_wheel = {
         let mut owner = WHEEL_PTR.lock().unwrap();
         if *owner == Some(id) { *owner = None; true } else { false }
@@ -820,7 +830,7 @@ fn release_touch_profile() {
     if let Some(id) = WHEEL_PTR.lock().unwrap().take() { ids.insert(id); }
     crate::touch_controls::set_wheel_open(false);
     crate::field_controls::close();
-    if let Some((id,_))=FIELD_POINTER.lock().unwrap().take(){ids.insert(id);}
+    TAPS.lock().unwrap().queued.clear();
     if let Some(id)=crate::touch_navigation::cancel(){ids.insert(id);}
     if let Some((x,y))=crate::touch_navigation::cancel_pointer(){
         android::push_input(ramen::platform::android::InputEvent::PointerUp{x,y,button:0});
@@ -1390,7 +1400,7 @@ extern "C" {
 fn reset_input_state() {
     if let Ok(mut value) = POINTER_CONTROLS.lock() { *value = None; }
     if let Ok(mut value) = WHEEL_PTR.lock() { *value = None; }
-    if let Ok(mut value) = FIELD_POINTER.lock() { *value = None; }
+    if let Ok(mut value) = TAPS.lock() { value.queued.clear(); value.phase = TapPhase::Idle; }
     if let Ok(mut value) = SWALLOWED_INPUTS.lock() { *value = None; }
     if let Ok(mut value) = MOUSE_DOWN_AT.lock() { value.clear(); }
     if let Ok(mut value) = DELAYED_UPS.lock() { value.clear(); }
