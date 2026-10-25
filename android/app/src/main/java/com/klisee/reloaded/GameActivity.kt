@@ -18,12 +18,14 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.klisee.reloaded.discord.DiscordRpcManager
 import com.klisee.reloaded.discord.DiscordRpcService
+import com.klisee.reloaded.ui.Strings
 
 /**
  * The emulator activity: a plain `NativeActivity` (that is what loads `libgm8emulator.so`),
@@ -95,6 +97,21 @@ class GameActivity : NativeActivity() {
             attrs.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             window.attributes = attrs
+        }
+        // Ask the system for the panel's rate in the experimental modes. Some OEMs ignore this,
+        // which is why the engine also has the detected rate as a fallback ceiling.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val prefs = Preferences(applicationContext)
+            val rate = when (prefs.renderMode) {
+                "60" -> 60f
+                "120", "uncapped" -> prefs.detectedRefreshRate()
+                else -> 0f
+            }
+            if (rate > 0f) {
+                val attrs = window.attributes
+                attrs.preferredRefreshRate = rate
+                window.attributes = attrs
+            }
         }
         super.onCreate(savedInstanceState)
         instance = this
@@ -249,6 +266,21 @@ class GameActivity : NativeActivity() {
                 if (!activity.isFinishing && !activity.isDestroyed && activity.hasWindowFocus()) {
                     activity.touchFeedback.press(activity.window.decorView, activity.touchPreferences.touchAppearance)
                 }
+            }
+        }
+
+        @JvmStatic
+        fun showTouchHint() {
+            val activity = instance ?: return
+            activity.runOnUiThread {
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                Strings.init(activity)
+                Strings.update(Preferences(activity))
+                Toast.makeText(
+                    activity,
+                    Strings.tr("Toca una pieza y pulsa Girar para rotarla."),
+                    Toast.LENGTH_LONG,
+                ).show()
             }
         }
 

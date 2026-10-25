@@ -1,5 +1,9 @@
 # Pokémon Reloaded en Android
 
+[![Licencia GPL-2.0](https://img.shields.io/badge/Licencia-GPL--2.0-515050?style=for-the-badge&logo=gnu&logoColor=000000&labelColor=FFFFFF)](LICENSE)
+[![Última versión](https://img.shields.io/github/v/release/Klisee/pokemon-reloaded-android?style=for-the-badge&label=Versi%C3%B3n&labelColor=FFFFFF&color=3DDC84&logo=android&logoColor=000000)](https://github.com/Klisee/pokemon-reloaded-android/releases/latest)
+[![Descargas totales](https://img.shields.io/github/downloads/Klisee/pokemon-reloaded-android/total?style=for-the-badge&label=Descargas&labelColor=FFFFFF&color=1F6FEB&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iIzAwMCIgZD0iTTUgMjBoMTR2LTJINXYyek0xOSA5aC00VjNIOXY2SDVsNyA3IDctN3oiLz48L3N2Zz4%3D)](https://github.com/Klisee/pokemon-reloaded-android/releases)
+
 Ejecuta **Pokémon Reloaded** en Android sin emulador de Windows de por medio. Lo mantiene
 [@Klisee](https://github.com/Klisee), para la comunidad.
 
@@ -31,6 +35,13 @@ ajustes, gestión de partidas y logs. El juego en sí no se toca.
 - **Partidas.** Se leen y escriben en la carpeta del juego. Desde Ajustes → Partidas puedes verlas,
   exportarlas, importarlas, borrarlas y mover una de una ranura a otra. Si jugabas en PC, tu partida
   entra por aquí.
+- **Frames.** En Ajustes → Frames, **30 FPS (Original)** es el modo por defecto. **60 FPS
+  (Experimental)** y **120 FPS (Experimental)** interpolan movimiento y cámara a esa tasa; la opción
+  de 120 solo se habilita si el panel anuncia 120 Hz o más. **FPS sin Límite** dibuja todo lo que
+  pueda el móvil y también requiere 120 Hz o más. La simulación sigue a 30 pasos/s: no va más rápido
+  el juego, y las animaciones de sprites y la lógica siguen a 30 Hz. Los modos experimentales gastan
+  más batería y pueden fallar. En escritorio se elige con `-R auto`, `-R 60`, `-R 120` o
+  `-R uncapped`, y `OPENGMK_RENDER_LOG=1` imprime los dibujos/s y los pasos/s reales.
 - **Salir y volver.** Al mandar la app a segundo plano, el bucle se detiene y el audio se corta de
   verdad; al volver, sigue donde estaba en vez de quedarse en negro.
 - **Logs.** Si algo va mal, la app escribe un log y lo puedes compartir como archivo de texto desde
@@ -127,6 +138,17 @@ cd ../../android
 La **universal** lleva las tres arquitecturas y sirve de comodín, a costa de pesar unos 10 MB más.
 
 El workflow `.github/workflows/build-apks.yml` compila las tres en CI al publicar un tag.
+
+## Licencia
+
+Copyright (C) 2026 Klisee y colaboradores.
+
+Este proyecto se distribuye bajo la **GNU General Public License v2.0** (`GPL-2.0-only`), la misma
+licencia que OpenGMK, del que toma el motor. El texto completo está en [LICENSE](LICENSE).
+
+Los archivos originales de Pokémon Reloaded no forman parte de este repositorio ni se distribuyen
+con el APK; son obra de F3R Productions y se rigen por sus propios términos. `vendor/udon` también
+es GPL-2.0-only, y `vendor/ramen` se distribuye bajo licencia Zlib.
 
 ## Créditos
 

@@ -28,6 +28,12 @@ world joystick 0.15 0.65 0.8 1
     @Test fun backpackGetsOnlyJoystickZAndXByDefault() {
         assertEquals(setOf("joystick", "z", "x"), TouchLayouts.controlsFor(TouchProfile.MENU_NAV).map { it.id }.toSet())
         assertTrue(TouchLayouts.controlsFor(TouchProfile.MENU).isEmpty())
+        assertFalse(TouchLayouts.controls.any { it.id.startsWith("box_") })
+        val old = TouchLayouts.parse("touch-layout-v1\nmenu box_z .8 .8 1 1\nworld z .7 .8 1.4 1\n")
+        assertTrue(TouchLayouts.controlsFor(TouchProfile.MENU, old).isEmpty())
+        assertEquals(TouchPlacement(.7f, .8f, 1.4f, true), old["world/z"])
+        val optional = TouchLayouts.availableFor(TouchProfile.WORLD).map { it.id }
+        for (key in listOf("shift", "alt", "ctrl", "d", "f3", "h", "k")) assertTrue(key in optional)
         val battle = TouchLayouts.controlsFor(TouchProfile.BATTLE).map { it.id }
         assertTrue("pkmn" in battle)
         assertFalse("alpha8" in battle || "sel_world" in battle)

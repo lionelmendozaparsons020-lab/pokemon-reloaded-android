@@ -1,7 +1,9 @@
 package com.klisee.reloaded
 
 import android.content.Context
+import android.hardware.display.DisplayManager
 import android.util.AtomicFile
+import android.view.Display
 import java.io.File
 import java.io.IOException
 
@@ -10,6 +12,7 @@ import java.io.IOException
  * only holds what the launcher itself can honour.
  */
 class Preferences(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
 
     /** Keep the screen awake while the game is running, so long battles don't lock the phone. */
@@ -160,8 +163,51 @@ class Preferences(context: Context) {
             prefs.edit().putBoolean("keepAspect", value).apply()
         }
 
+    /**
+     * How drawing is paced: "native" keeps the original one frame per game step (the safe default),
+     * "60" and "120" interpolate at those fixed rates, and "uncapped" never waits.
+     */
+    var renderMode: String
+        get() {
+            val stored = prefs.getString("renderMode", "native") ?: "native"
+            val hz = detectedRefreshRate()
+            return when (stored) {
+                // Names used by the first test builds. Keep an existing opt-in, but fall back to a
+                // mode the panel can actually show.
+                "auto", "experimental" -> if (hz >= 119.5f) "120" else "60"
+                "120" -> if (hz >= 119.5f) "120" else "native"
+                "uncapped" -> if (hz >= 119.5f) "uncapped" else "native"
+                "60" -> if (hz >= 59.5f) "60" else "native"
+                else -> "native"
+            }
+        }
+        set(value) {
+            val safe = if (value in setOf("60", "120", "uncapped")) value else "native"
+            prefs.edit().putString("renderMode", safe).apply()
+        }
+
+    /**
+     * Highest refresh rate the panel advertises, in Hz. Falls back to the active mode and then to
+     * 60 when Android does not report one. This is what the experimental mode asks the system for.
+     */
+    fun detectedRefreshRate(): Float {
+        val manager = appContext.getSystemService(DisplayManager::class.java)
+        val display = manager?.getDisplay(Display.DEFAULT_DISPLAY)
+        return display?.supportedModes?.maxOfOrNull { it.refreshRate }
+            ?: display?.mode?.refreshRate
+            ?: display?.refreshRate
+            ?: 60f
+    }
+
+    /** Draw the engine's actual frame rate in the top centre of the game. */
+    var showFps: Boolean
+        get() = prefs.getBoolean("showFps", false)
+        set(value) {
+            prefs.edit().putBoolean("showFps", value).apply()
+        }
+
     /** Mirrors the video mode into the file the emulator reads at startup. */
-    fun writeVideo(filesDir: File) = writeVideoFile(filesDir, keepAspect)
+    fun writeVideo(filesDir: File) = writeVideoFile(filesDir, keepAspect, renderMode, detectedRefreshRate(), showFps)
 
     // --- Controles dinámicos (edición Controles) ---------------------------------------------
 
@@ -174,27 +220,18 @@ class Preferences(context: Context) {
 
     fun touchLayouts(): Map<String, TouchPlacement> {
         val values = TouchLayouts.parse(prefs.getString("touchLayoutV1", TouchLayouts.HEADER).orEmpty()).toMutableMap()
-        // One-time: X joins Z on the same row, as at the start of the game. Forced on update.
-        if (!prefs.getBoolean("touchXZLayoutV1", false)) {
-            values["world/z"] = TouchPlacement(0.865f, 0.851f)
-            values["world/x"] = TouchPlacement(0.933f, 0.851f)
-            prefs.edit().putBoolean("touchXZLayoutV1", true)
-                .putString("touchLayoutV1", TouchLayouts.encode(values)).apply()
-        }
-        // One-time: the Navigation profile also gets X and Z together.
-        if (!prefs.getBoolean("touchXZMenuV1", false)) {
-            values["menu_nav/z"] = TouchPlacement(0.865f, 0.851f)
-            values["menu_nav/x"] = TouchPlacement(0.933f, 0.851f)
-            prefs.edit().putBoolean("touchXZMenuV1", true)
-                .putString("touchLayoutV1", TouchLayouts.encode(values)).apply()
-        }
-        // One-time: final default is the game's diagonal, X above-right of Z.
+        // Migrate only missing defaults; never overwrite a user's placement.
         if (!prefs.getBoolean("touchXZDiagonalV1", false)) {
-            values["world/z"] = TouchPlacement(0.865f, 0.851f)
-            values["world/x"] = TouchPlacement(0.933f, 0.700f)
-            values["menu_nav/z"] = TouchPlacement(0.865f, 0.851f)
-            values["menu_nav/x"] = TouchPlacement(0.933f, 0.700f)
-            prefs.edit().putBoolean("touchXZDiagonalV1", true)
+            for (profile in listOf(TouchProfile.WORLD, TouchProfile.MENU_NAV)) {
+                for (id in listOf("z", "x")) {
+                    val key = "${profile.id}/$id"
+                    if (key !in values) values[key] = TouchPlacement(
+                        if (id == "z") .865f else .933f,
+                        if (id == "z") .851f else .700f)
+                }
+            }
+            prefs.edit().putBoolean("touchXZLayoutV1", true)
+                .putBoolean("touchXZMenuV1", true).putBoolean("touchXZDiagonalV1", true)
                 .putString("touchLayoutV1", TouchLayouts.encode(values)).apply()
         }
         if (prefs.getBoolean("battleTopLayoutV1", false)) return values

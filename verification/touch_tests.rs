@@ -7,6 +7,8 @@ extern crate self as ramen;
 #[path = "../src/OpenGMK/gm8emulator/src/touch_navigation.rs"] mod touch_navigation;
 #[path = "../src/OpenGMK/gm8emulator/src/box_touch.rs"] mod box_touch;
 
+#[path = "../src/OpenGMK/gm8emulator/src/touch_stick.rs"] mod touch_stick;
+
 #[test]
 fn profiles_keep_automatic_switching_and_correct_key8_in_both_visual_styles() {
     use touch_controls as tc;
@@ -43,6 +45,13 @@ fn profiles_keep_automatic_switching_and_correct_key8_in_both_visual_styles() {
     tc::set_box_open(true);
     assert_eq!(tc::current_context(), tc::MENU);
     assert!(!tc::is_active(idx("z")) && !tc::movement_active());
+    for style in ["classic", "modern"] {
+        touch_appearance::load(&format!("touch-appearance-v1\nstyle={style}\n"));
+        for (i, control) in tc::controls().iter().enumerate() {
+            assert!(!control.name.starts_with("box_"));
+            assert!(!tc::is_active(i));
+        }
+    }
     for room in [7,5,6] {
         touch_navigation::report(room, -1, false);
         tc::set_room(room);
@@ -64,6 +73,19 @@ fn profiles_keep_automatic_switching_and_correct_key8_in_both_visual_styles() {
     touch_navigation::report(100, -1, false);
     tc::set_room(100);
     assert!(tc::is_active(eight));
+    tc::set_move_mode(tc::MoveMode::Joystick);
+    for (w,h) in [(1536.0,720.0),(2400.0,1080.0),(1600.0,1200.0)] {
+        let (cx,cy) = tc::joystick_center_in_window(w,h);
+        let r = tc::joystick_radius()*h;
+        tc::set_move_dirs([false;4]);
+        assert_eq!(tc::movement_dirs(cx+0.08*r/w,cy-0.08*r/h,w,h), [true,false,false,true]);
+        tc::set_move_dirs([true,false,false,true]);
+        assert_eq!(tc::movement_dirs(cx,cy,w,h), [false;4]);
+    }
+    tc::set_move_dirs([false;4]);
+    tc::set_room(tc::PUZZLE_ROOM);
+    for name in [tc::ROTATE_NAME,"f1","x"] { assert!(tc::is_active(idx(name))); }
+    tc::set_room(100);
 }
 
 #[test]

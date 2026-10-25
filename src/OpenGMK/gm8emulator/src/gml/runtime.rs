@@ -1219,11 +1219,13 @@ impl Game {
             },
             InstanceVariable::ImageIndex => {
                 instance.image_index.set(value.into());
+                instance.bbox_is_stale.set(true);
             },
             InstanceVariable::ImageSingle => {
                 let img = Real::from(value);
                 if img >= Real::from(0.0) {
                     instance.image_index.set(img);
+                    instance.bbox_is_stale.set(true);
                     instance.image_speed.set(Real::from(0.0));
                 } else {
                     instance.image_speed.set(Real::from(1.0));
@@ -1291,7 +1293,13 @@ impl Game {
             InstanceVariable::Argument14 => self.set_argument(context, 14, value)?,
             InstanceVariable::Argument15 => self.set_argument(context, 15, value)?,
             InstanceVariable::Argument => self.set_argument(context, array_index as usize, value)?,
-            InstanceVariable::Room => self.scene_change = Some(SceneChange::Room(value.into())),
+            InstanceVariable::Room => {
+                // Draw scripts sometimes steer the room as a safety net. A frame drawn only to
+                // interpolate must not act on that; the canonical frame of the step will.
+                if !self.interp_draw {
+                    self.scene_change = Some(SceneChange::Room(value.into()))
+                }
+            },
             InstanceVariable::TransitionKind => self.transition_kind = value.into(),
             InstanceVariable::TransitionSteps => self.transition_steps = value.into(),
             InstanceVariable::Score => self.score = value.into(),

@@ -82,6 +82,10 @@ pub const CHOICE: u8 = 32;
 pub const SAFARI: u8 = 64;
 pub const MENU_NAV: u8 = 128;
 
+/// The actual puzzle room: PuzleUNW, 202.
+pub const PUZZLE_ROOM: i32 = 202;
+pub const ROTATE_NAME: &str = "girar";
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Shape {
     Circle { cx: f32, cy: f32, r: f32 },
@@ -132,6 +136,8 @@ pub const CLASSIC_CONTROLS: &[Control] = &[
     // Menu / misc keys (second row along the top).
     Control { name: "alpha8", key: Key::Alpha8, shape: Shape::Circle { cx: 0.228, cy: 0.050, r: 0.022 }, label: Label::Text("8"), contexts: WORLD },
     Control { name: "space", key: Key::Space, shape: Shape::Circle { cx: 0.300, cy: 0.145, r: 0.022 }, label: Label::Text("PKM"), contexts: WORLD | BATTLE | SAFARI },
+    Control { name: ROTATE_NAME, key: Key::Z, shape: Shape::Circle { cx: 0.935, cy: 0.150, r: 0.036 }, label: Label::Text("Girar"), contexts: 0 },
+    Control { name: "f1", key: Key::F1, shape: Shape::Circle { cx: 0.935, cy: 0.300, r: 0.036 }, label: Label::Text("F1"), contexts: 0 },
     Control { name: "o", key: Key::O, shape: Shape::Circle { cx: 0.372, cy: 0.145, r: 0.022 }, label: Label::Text("O"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "m", key: Key::M, shape: Shape::Circle { cx: 0.444, cy: 0.145, r: 0.022 }, label: Label::Text("M"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "e", key: Key::E, shape: Shape::Circle { cx: 0.516, cy: 0.145, r: 0.022 }, label: Label::Text("E"), contexts: WORLD | BATTLE | SAFARI },
@@ -173,6 +179,16 @@ pub const CLASSIC_CONTROLS: &[Control] = &[
     // the pair is pressed together (see `control_key_down`). Centred along the very top, and drawn
     // smaller than the rest because its label is a wide one.
     Control { name: COMBO_BUTTON_NAME, key: Key::LeftControl, shape: Shape::Circle { cx: 0.500, cy: 0.060, r: 0.018 }, label: Label::Text("C+P"), contexts: CHARACTER },
+    // Optional keys for the controls editor. `contexts: 0` means "no profile by default": the
+    // generic `is_active` path only draws them when the layout file has an entry for the current
+    // profile, so the player can add Shift, Alt, F3, H... without them cluttering the overlay.
+    Control { name: "shift", key: Key::LeftShift, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Shift"), contexts: 0 },
+    Control { name: "alt", key: Key::LeftAlt, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Alt"), contexts: 0 },
+    Control { name: "ctrl", key: Key::LeftControl, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Ctrl"), contexts: 0 },
+    Control { name: "d", key: Key::D, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("D"), contexts: 0 },
+    Control { name: "f3", key: Key::F3, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("F3"), contexts: 0 },
+    Control { name: "h", key: Key::H, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("H"), contexts: 0 },
+    Control { name: "k", key: Key::K, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("K"), contexts: 0 },
 ];
 /// Our own (new-style) catalogue, left as it was.
 pub const NEW_CONTROLS: &[Control] = &[
@@ -187,6 +203,8 @@ pub const NEW_CONTROLS: &[Control] = &[
     // Menu / misc keys (second row along the top).
     Control { name: "alpha8", key: Key::Alpha8, shape: Shape::Circle { cx: 0.228, cy: 0.050, r: 0.022 }, label: Label::Text("8"), contexts: WORLD },
     Control { name: "space", key: Key::Space, shape: Shape::Circle { cx: 0.300, cy: 0.145, r: 0.022 }, label: Label::Text("PKM"), contexts: WORLD | BATTLE | SAFARI },
+    Control { name: ROTATE_NAME, key: Key::Z, shape: Shape::Circle { cx: 0.935, cy: 0.150, r: 0.036 }, label: Label::Text("Girar"), contexts: 0 },
+    Control { name: "f1", key: Key::F1, shape: Shape::Circle { cx: 0.935, cy: 0.300, r: 0.036 }, label: Label::Text("F1"), contexts: 0 },
     Control { name: "o", key: Key::O, shape: Shape::Circle { cx: 0.372, cy: 0.145, r: 0.022 }, label: Label::Text("O"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "m", key: Key::M, shape: Shape::Circle { cx: 0.444, cy: 0.145, r: 0.022 }, label: Label::Text("M"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "e", key: Key::E, shape: Shape::Circle { cx: 0.516, cy: 0.145, r: 0.022 }, label: Label::Text("E"), contexts: WORLD | BATTLE | SAFARI },
@@ -205,7 +223,7 @@ pub const NEW_CONTROLS: &[Control] = &[
     Control { name: "s", key: Key::S, shape: Shape::Circle { cx: 0.712, cy: 0.700, r: 0.026 }, label: Label::Text("S"), contexts: BATTLE },
     // Holding this opens the party wheel (see below): each slot is one Pokémon of the team.
     Control { name: PARTY_NAME, key: Key::Alpha1, shape: Shape::Circle { cx: 0.300, cy: 0.760, r: 0.038 }, label: Label::Text("SEL"), contexts: BATTLE },
-    Control { name: "a", key: Key::A, shape: Shape::Circle { cx: 0.640, cy: 0.900, r: 0.024 }, label: Label::Text("A"), contexts: WORLD | SAFARI },
+    Control { name: "a", key: Key::A, shape: Shape::Circle { cx: 0.640, cy: 0.900, r: 0.024 }, label: Label::Text("A"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "n", key: Key::N, shape: Shape::Circle { cx: 0.640, cy: 0.760, r: 0.024 }, label: Label::Text("N"), contexts: WORLD | SAFARI },
     // Menu keys.
     Control { name: "return", key: Key::Return, shape: Shape::Circle { cx: 0.500, cy: 0.945, r: 0.032 }, label: Label::Text("OK"), contexts: WORLD | BATTLE | SAFARI },
@@ -228,6 +246,16 @@ pub const NEW_CONTROLS: &[Control] = &[
     // the pair is pressed together (see `control_key_down`). Centred along the very top, and drawn
     // smaller than the rest because its label is a wide one.
     Control { name: COMBO_BUTTON_NAME, key: Key::LeftControl, shape: Shape::Circle { cx: 0.500, cy: 0.060, r: 0.018 }, label: Label::Text("C+P"), contexts: CHARACTER },
+    // Optional keys for the controls editor. `contexts: 0` means "no profile by default": the
+    // generic `is_active` path only draws them when the layout file has an entry for the current
+    // profile, so the player can add Shift, Alt, F3, H... without them cluttering the overlay.
+    Control { name: "shift", key: Key::LeftShift, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Shift"), contexts: 0 },
+    Control { name: "alt", key: Key::LeftAlt, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Alt"), contexts: 0 },
+    Control { name: "ctrl", key: Key::LeftControl, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Ctrl"), contexts: 0 },
+    Control { name: "d", key: Key::D, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("D"), contexts: 0 },
+    Control { name: "f3", key: Key::F3, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("F3"), contexts: 0 },
+    Control { name: "h", key: Key::H, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("H"), contexts: 0 },
+    Control { name: "k", key: Key::K, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("K"), contexts: 0 },
 ];
 /// The catalogue the active overlay draws and hit-tests.
 pub fn controls() -> &'static [Control] {
@@ -443,7 +471,7 @@ pub fn load_layout(text: &str) {
             let fields: Vec<_> = line.split_whitespace().collect();
             if fields.len() != 6 { continue }
             let context = match fields[0] {
-                "world" => WORLD, "battle" => BATTLE, "dialog" => DIALOG, "character" => CHARACTER, "choice" => CHOICE, "safari" => SAFARI, "menu_nav" => MENU_NAV, _ => continue,
+                "world" => WORLD, "battle" => BATTLE, "dialog" => DIALOG, "character" => CHARACTER, "choice" => CHOICE, "safari" => SAFARI, "menu_nav" => MENU_NAV, "menu" => MENU, _ => continue,
             };
             let name = if fields[1] == JOYSTICK_NAME && context & (WORLD | BATTLE | CHOICE | MENU_NAV) != 0 {
                 JOYSTICK_NAME
@@ -628,6 +656,10 @@ pub fn set_room(room: i32) {
         picker_reset();
         // A fresh picker offers its one-off trick button again; using it once was enough last time.
         COMBO_USED.store(false, Ordering::Relaxed);
+        #[cfg(target_os = "android")]
+        if room == PUZZLE_ROOM {
+            crate::android_main::show_puzzle_hint();
+        }
     }
     ROOM.store(room, Ordering::Relaxed);
     log_state_change(room);
@@ -831,6 +863,8 @@ pub fn current_context() -> u8 {
         // The Safari Zone's catching room. Confirmed on the device: it reports room 715 while the
         // ball is being thrown there. It keeps the map's buttons bar the stick and the attacks.
         715 => SAFARI,
+        // The puzzle uses only its three buttons; everything else steps aside.
+        PUZZLE_ROOM => MENU,
         // Before the first frame we don't know the room yet; show nothing rather than flashing the
         // whole overlay for one frame.
         -1 => MENU,
@@ -865,6 +899,13 @@ pub fn is_active(index: usize) -> bool {
     if overlay_style() == OverlayStyle::None {
         return false
     }
+    if ROOM.load(Ordering::Relaxed) == PUZZLE_ROOM
+        && matches!(controls()[index].name, ROTATE_NAME | "f1" | "x")
+    {
+        return !pad_active() && !info_window_open()
+    }
+    // Storage stays touch-driven, including saved upstream layouts.
+    if box_open() && current_context() == MENU { return false }
     let classic = overlay_style() == OverlayStyle::Classic;
     if classic {
         if current_context() == WORLD && matches!(controls()[index].name, "alpha1" | "alpha2" | "alpha3" | "alpha4" | "alpha5" | "alpha6" | "alpha7") { return false }
@@ -1107,7 +1148,7 @@ pub const JOYSTICK_R: f32 = 0.200;
 /// Dead zone, as a fraction of the radius, before a direction registers.
 pub const JOYSTICK_DEAD: f32 = 0.35;
 /// Only the touchscreen stick has a 10% activation threshold.
-pub const TOUCH_JOYSTICK_DEAD: f32 = 0.10;
+pub const TOUCH_JOYSTICK_DEAD: f32 = crate::touch_stick::ACTIVATE;
 
 /// The movement control's centre, in normalised coordinates.
 pub fn movement_center() -> (f32, f32) {
@@ -1175,16 +1216,13 @@ pub fn movement_dirs(nx: f32, ny: f32, ww: f32, wh: f32) -> [bool; 4] {
             [dy < 0.0, dy > 0.0, false, false]
         }
     }
-    touch_stick_dirs(dx, dy)
+    crate::touch_stick::directions(dx, dy, move_dirs())
 }
 
 /// Eight equal directions; the touchscreen reacts at 10% travel without
 /// changing the larger physical-gamepad dead zone.
 pub fn touch_stick_dirs(dx: f32, dy: f32) -> [bool; 4] {
-    let distance = dx.hypot(dy);
-    if !distance.is_finite() || distance <= TOUCH_JOYSTICK_DEAD { return [false; 4] }
-    let threshold = distance * 0.38268343; // sin(22.5 degrees)
-    [dy < -threshold, dy > threshold, dx < -threshold, dx > threshold]
+    crate::touch_stick::directions(dx, dy, [false; 4])
 }
 
 /// Physical controllers preserve their original dead zone.
@@ -1207,6 +1245,31 @@ pub fn set_movement_offset(dx: f32, dy: f32) {
 pub fn movement_offset() -> (f32, f32) {
     *MOVEMENT_OFFSET.lock().unwrap()
 }
+
+struct MovementVisual {
+    spring: crate::touch_stick::StickSpring,
+    frame: Option<std::time::Instant>,
+}
+static MOVEMENT_VISUAL: Mutex<MovementVisual> = Mutex::new(MovementVisual {
+    spring: crate::touch_stick::StickSpring::new(), frame: None,
+});
+
+/// Rendering only: input and key release never wait for this spring.
+pub fn animated_movement_offset(animate: bool) -> (f32, f32) {
+    let target = movement_offset();
+    let mut visual = MOVEMENT_VISUAL.lock().unwrap();
+    if !movement_active() || !animate {
+        visual.spring.reset();
+        visual.frame = None;
+        return if movement_active() { target } else { (0.0, 0.0) }
+    }
+    let now = std::time::Instant::now();
+    let dt = visual.frame.replace(now).map_or(1.0 / 60.0,
+        |last| now.saturating_duration_since(last).as_secs_f32());
+    if dt > 0.25 { visual.spring.reset(); }
+    visual.spring.step(target, dt.min(0.05))
+}
+
 
 /// Which directions the movement control is pressing right now, so the D-pad can light up the arm.
 static MOVE_DIRS: AtomicU32 = AtomicU32::new(0);

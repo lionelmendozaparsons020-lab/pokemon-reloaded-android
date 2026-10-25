@@ -124,18 +124,46 @@ static STICK_STATE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32:
 /// Reads the video mode the launcher saved. Only one thing matters here: whether the picture keeps
 /// the shape the game was drawn for, or stretches to fill the screen.
 fn load_video() {
-    let path = PathBuf::from(format!("/data/data/{}/files/video.conf", PACKAGE_DIR));
+    let path = storage_path("video.conf");
     if let Ok(text) = fs::read_to_string(&path) {
         for line in text.lines() {
             let Some((name, value)) = line.trim().split_once('=') else { continue };
-            if name.trim() != "scaling" {
-                continue
-            }
-            let value = value.trim();
-            if value == "aspect" || value == "full" {
-                eprintln!("[video] escalado: {}", value);
-                // Read by the engine when it builds its renderer.
-                std::env::set_var("OPENGMK_SCALING", value);
+            match name.trim() {
+                "scaling" => {
+                    let value = value.trim();
+                    if value == "aspect" || value == "full" {
+                        eprintln!("[video] escalado: {}", value);
+                        // Read by the engine when it builds its renderer.
+                        std::env::set_var("OPENGMK_SCALING", value);
+                    }
+                },
+                // How the engine paces drawing: native (one frame per game step), auto (vsync) or
+                // uncapped (as fast as the device can). Read when the game loop starts.
+                "render" => {
+                    let value = value.trim();
+                    // Named modes plus the numeric caps the Settings screen writes (60/120/...).
+                    let numeric = value.parse::<u32>().map(|hz| hz > 0).unwrap_or(false);
+                    if matches!(value, "native" | "auto" | "uncapped") || numeric {
+                        eprintln!("[video] render: {}", value);
+                        std::env::set_var("OPENGMK_RENDER", value);
+                    }
+                },
+                // Refresh rate the launcher detected. `auto` uses it as a fallback cap when the
+                // driver's swap interval answers success but never blocks (as on some PCs).
+                "detected_hz" => {
+                    if let Ok(hz) = value.trim().parse::<u32>() {
+                        if hz > 0 {
+                            eprintln!("[video] pantalla: {} Hz", hz);
+                            std::env::set_var("OPENGMK_RENDER_HZ", hz.to_string());
+                        }
+                    }
+                },
+                "show_fps" => {
+                    let value = value.trim();
+                    eprintln!("[video] mostrar FPS: {}", value != "0");
+                    std::env::set_var("OPENGMK_SHOW_FPS", if value == "1" { "1" } else { "0" });
+                },
+                _ => (),
             }
         }
     }
@@ -144,7 +172,7 @@ fn load_video() {
 /// Reads the layout the launcher's control screen left behind. Best effort: with no file, the
 /// built-in layout is used exactly as before.
 fn load_controls() {
-    let path = PathBuf::from(format!("/data/data/{}/files/controls.conf", PACKAGE_DIR));
+    let path = storage_path("controls.conf");
     let mut buttons = HashMap::new();
     crate::touch_controls::set_sprite_opacity(1.0);
     if let Ok(text) = fs::read_to_string(&path) {
@@ -178,7 +206,7 @@ fn load_controls() {
 /// Reads the overlay the launcher's editor left behind: the style, what drives the movement, the
 /// overall size and where each control sits. Best effort: with no file, the built-in defaults are used.
 fn load_touch() {
-    let path = PathBuf::from(format!("/data/data/{}/files/touch.conf", PACKAGE_DIR));
+    let path = storage_path("touch.conf");
     let Ok(text) = fs::read_to_string(&path) else { return };
     eprintln!("[overlay] leyendo {}", path.display());
     crate::touch_controls::clear_layout();
@@ -462,6 +490,12 @@ fn pointer_down(id: i32, x: f32, y: f32) {
     }
     match hit {
         Some(index) => {
+            if crate::touch_controls::controls()[index].name == crate::touch_controls::ROTATE_NAME {
+                queue_rotate_at_last_game_touch();
+                SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+                touch_feedback();
+                return;
+            }
             if crate::touch_controls::controls()[index].name == crate::touch_controls::PARTY_NAME {
                 // Holding it opens the party wheel instead of pressing a key of its own.
                 crate::touch_controls::set_wheel_open(true);
@@ -545,7 +579,13 @@ static MOUSE_DOWN_AT: Mutex<Vec<(i32, Instant)>> = Mutex::new(Vec::new());
 static DELAYED_UPS: Mutex<Vec<(Instant, f32, f32)>> = Mutex::new(Vec::new());
 static DELAYED_DOWNS: Mutex<Vec<(Instant, f32, f32)>> = Mutex::new(Vec::new());
 
+/// Last place the finger touched the game itself, not a button.
+static LAST_GAME_TOUCH: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+const ROTATE_DELAY: Duration = Duration::from_millis(350);
+static PENDING_ROTATE: Mutex<Option<(Instant, f32, f32)>> = Mutex::new(None);
+
 fn mouse_down(id: i32, x: f32, y: f32) {
+    *LAST_GAME_TOUCH.lock().unwrap() = Some((x, y));
     let deliver_at = Instant::now() + HOVER_DELAY;
     let mut downs = MOUSE_DOWN_AT.lock().unwrap();
     downs.retain(|(pointer, _)| *pointer != id);
@@ -570,6 +610,38 @@ fn mouse_up(id: i32, x: f32, y: f32) {
         MOUSE_PRIMARY_HELD.lock().unwrap().take();
         android::push_input(ramen::platform::android::InputEvent::PointerUp { x, y, button: 0 });
     }
+}
+
+fn right_click_at(x: f32, y: f32) {
+    use ramen::platform::android::InputEvent;
+    android::push_input(InputEvent::PointerMoved { x, y });
+    android::push_input(InputEvent::PointerDown { x, y, button: 2 });
+    android::push_input(InputEvent::PointerUp { x, y, button: 2 });
+}
+
+fn queue_rotate_at_last_game_touch() {
+    if let Some((x, y)) = *LAST_GAME_TOUCH.lock().unwrap() {
+        *PENDING_ROTATE.lock().unwrap() = Some((Instant::now() + ROTATE_DELAY, x, y));
+        eprintln!("[puzzle] girar encolado en {},{}", x, y);
+    }
+}
+
+fn flush_pending_rotate() {
+    let mut pending = PENDING_ROTATE.lock().unwrap();
+    let Some((at, x, y)) = *pending else { return };
+    if Instant::now() < at {
+        return;
+    }
+    *pending = None;
+    eprintln!("[puzzle] girar enviado en {},{}", x, y);
+    right_click_at(x, y);
+}
+
+pub fn show_puzzle_hint() {
+    with_activity(|env, class| {
+        env.call_static_method(class, "showTouchHint", "()V", &[])?;
+        Ok(())
+    });
 }
 
 /// Delivers the presses and releases that were held back to make a short tap a proper click.
@@ -804,6 +876,7 @@ fn translate(event: &InputEvent) {
                         } else if is_movement_pointer(p.pointer_id()) {
                             movement_update(p.x(), p.y());
                         } else if !pointer_is_control(p.pointer_id()) {
+                            *LAST_GAME_TOUCH.lock().unwrap() = Some((p.x(), p.y()));
                             android::push_input(ramen::platform::android::InputEvent::PointerMoved { x: p.x(), y: p.y() });
                         }
                     }
@@ -1377,8 +1450,17 @@ extern "C" {
 /// on, because android-activity asserts it, so the pump cannot live on a worker thread.
 /// The emulator itself runs on a worker thread instead.
 pub fn android_entry(app: AndroidApp) {
+    // Resolve the app's real internal storage from the running Activity before anything reads a
+    // setting or writes a log. `/data/data/<package>` is only user 0's data: in a work profile, a
+    // secondary user or a cloned app it points somewhere this process cannot write, which is what
+    // made the engine fail with "Permission denied" creating `files/game` after a good install.
+    let storage = app
+        .internal_data_path()
+        .unwrap_or_else(|| PathBuf::from(format!("/data/data/{}/files", PACKAGE_DIR)));
+    let _ = STORAGE_DIR.set(storage);
     // First thing, so the opening lines of the session are captured as well.
     pipe_std_to_logcat();
+    logf(&format!("almacenamiento: {}", storage_dir().display()));
     // Panics then land in the same log, with a backtrace.
     std::env::set_var("RUST_BACKTRACE", "1");
     // A recreated Activity must not inherit the previous session's held keys.
@@ -1388,8 +1470,8 @@ pub fn android_entry(app: AndroidApp) {
     load_controls();
     load_touch();
     load_video();
-    crate::touch_controls::load_layout(&fs::read_to_string(format!("/data/data/{}/files/touch-layout.conf", PACKAGE_DIR)).unwrap_or_default());
-    crate::touch_appearance::load(&fs::read_to_string(format!("/data/data/{}/files/touch-appearance.conf", PACKAGE_DIR)).unwrap_or_default());
+    crate::touch_controls::load_layout(&fs::read_to_string(storage_path("touch-layout.conf")).unwrap_or_default());
+    crate::touch_appearance::load(&fs::read_to_string(storage_path("touch-appearance.conf")).unwrap_or_default());
 
     publish_window(&app);
 
@@ -1472,6 +1554,7 @@ pub fn android_entry(app: AndroidApp) {
             control_key_up(index);
         }
         flush_delayed_mouse();
+        flush_pending_rotate();
         // The keyboard follows the game's text dialog: it comes up by itself the moment the game asks
         // for a name, and goes away when the dialog closes. Only the change is acted on, so closing
         // it by hand while the dialog is open is respected instead of being undone on the next tick;
@@ -1593,6 +1676,22 @@ use std::{
 const ZIP_NAME: &str = "game.zip";
 pub(crate) const PACKAGE_DIR: &str = "com.klisee.reloaded";
 
+/// The app's internal storage, as the running Activity reports it (`Context.getFilesDir()`).
+/// `android_entry` sets it from `AndroidApp::internal_data_path()`; the fallback only matters on a
+/// host build or if the Activity is already gone.
+static STORAGE_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+pub(crate) fn storage_dir() -> PathBuf {
+    STORAGE_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from(format!("/data/data/{}/files", PACKAGE_DIR)))
+}
+
+pub(crate) fn storage_path(name: &str) -> PathBuf {
+    storage_dir().join(name)
+}
+
 /// Free bytes on the filesystem containing `path`, or `None` if it can't be queried.
 fn free_bytes_on(path: &Path) -> Option<u64> {
     // SAFETY: zeroed statvfs is a valid argument, and the call only reads.
@@ -1618,7 +1717,7 @@ fn enough_space(zip_len: u64, target: &Path) -> bool {
 fn zip_candidates() -> Vec<PathBuf> {
     let mut dirs = vec![
         PathBuf::from(format!("/sdcard/Android/data/{}/files", PACKAGE_DIR)),
-        PathBuf::from(format!("/data/data/{}/files", PACKAGE_DIR)),
+        storage_dir(),
         PathBuf::from("/sdcard/Download".to_string()),
         PathBuf::from("/sdcard".to_string()),
         // Writable by `adb push`, which is how the game is usually sideloaded for testing.
@@ -1653,7 +1752,7 @@ fn logf(msg: &str) {
 /// Appends one line to `<files>/emulator.log`, rotating once past [LOG_MAX_BYTES].
 fn append_log_file(msg: &str) {
     const LOG_MAX_BYTES: u64 = 256 * 1024;
-    let path = PathBuf::from(format!("/data/data/{}/files/emulator.log", PACKAGE_DIR));
+    let path = storage_path("emulator.log");
     if let Some(dir) = path.parent() {
         let _ = fs::create_dir_all(dir);
     }
@@ -1689,16 +1788,30 @@ fn provision_soundfont(game_dir: &Path) {
 
 /// Makes the game available on disk and returns the path of its executable.
 fn ensure_game_extracted() -> Result<PathBuf, String> {
-    let storage = PathBuf::from(format!("/data/data/{}/files", PACKAGE_DIR));
+    let storage = storage_dir();
     let game_dir = storage.join("game");
-    fs::create_dir_all(&game_dir).map_err(|e| format!("no se pudo crear {}: {}", game_dir.display(), e))?;
 
-    // Already provisioned? Both the exe and the data folder have to be there.
+    // Already provisioned? This is checked before creating anything: when the launcher installed
+    // the game, reading the exe is all that has to happen at startup.
     if let Some(exe) = find_exe(&game_dir) {
         if game_dir.join("data").is_dir() {
             logf(&format!("juego ya extraido en {}", game_dir.display()));
             return Ok(exe)
         }
+    }
+
+    if game_dir.exists() && !game_dir.is_dir() {
+        return Err(format!("{} existe pero no es una carpeta", game_dir.display()))
+    }
+    if !game_dir.is_dir() {
+        fs::create_dir_all(&game_dir).map_err(|e| {
+            format!(
+                "no se pudo crear {}: {} (almacenamiento real: {})",
+                game_dir.display(),
+                e,
+                storage.display()
+            )
+        })?;
     }
 
     let zips = zip_candidates();
@@ -1712,30 +1825,56 @@ fn ensure_game_extracted() -> Result<PathBuf, String> {
     let zip_len = fs::metadata(zip_path).map_err(|e| format!("{}: {}", zip_path.display(), e))?.len();
     logf(&format!("encontrado {} ({} bytes)", zip_path.display(), zip_len));
 
-    if !enough_space(zip_len, &game_dir) {
-        return Err("espacio insuficiente: hacen falta unas dos veces el tamano del zip".into())
+    let file = fs::File::open(zip_path).map_err(|e| format!("{}: {}", zip_path.display(), e))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("no pude leer el zip {}: {}", zip_path.display(), e))?;
+    // The zip is compressed: what has to fit on disk is its contents, not the archive itself.
+    let mut uncompressed = 0u64;
+    for index in 0..archive.len() {
+        if let Ok(entry) = archive.by_index_raw(index) {
+            uncompressed += entry.size();
+        }
+    }
+    if !enough_space(uncompressed.max(zip_len), &game_dir) {
+        return Err(format!(
+            "espacio insuficiente en {}: el juego ocupa unos {} MB",
+            storage.display(),
+            uncompressed / (1024 * 1024)
+        ))
     }
 
     // Extract into a staging dir and swap it in, so a failed run leaves the previous
     // contents intact rather than a half-extracted game.
     let staging = storage.join("game.staging");
-    let _ = fs::remove_dir_all(&staging);
+    if staging.exists() {
+        fs::remove_dir_all(&staging)
+            .map_err(|e| format!("no pude limpiar {}: {}", staging.display(), e))?;
+    }
     fs::create_dir_all(&staging).map_err(|e| format!("no se pudo crear {}: {}", staging.display(), e))?;
 
-    {
-        let file = fs::File::open(zip_path).map_err(|e| format!("{}: {}", zip_path.display(), e))?;
-        let mut archive =
-            zip::ZipArchive::new(file).map_err(|e| format!("no pude leer el zip {}: {}", zip_path.display(), e))?;
-        logf(&format!("extrayendo {} entradas", archive.len()));
-        archive
-            .extract(&staging)
-            .map_err(|e| format!("fallo la extraccion de {}: {}", zip_path.display(), e))?;
-    }
+    logf(&format!("extrayendo {} entradas", archive.len()));
+    archive
+        .extract(&staging)
+        .map_err(|e| format!("fallo la extraccion de {}: {}", zip_path.display(), e))?;
 
     let exe = find_exe(&staging).ok_or_else(|| "el zip no contiene ningun .exe en su raiz".to_string())?;
-    let _ = fs::remove_dir_all(&game_dir);
-    fs::rename(&staging, &game_dir)
-        .map_err(|e| format!("no pude mover lo extraido a {}: {}", game_dir.display(), e))?;
+    if !staging.join("data").is_dir() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err("el zip no contiene la carpeta data/ en su raiz".into())
+    }
+
+    // Keep the previous install aside until the new one is in place.
+    let previous = storage.join("game.old");
+    let _ = fs::remove_dir_all(&previous);
+    let moved_aside = game_dir.is_dir() && fs::rename(&game_dir, &previous).is_ok();
+    if let Err(e) = fs::rename(&staging, &game_dir) {
+        if moved_aside {
+            let _ = fs::rename(&previous, &game_dir);
+        }
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!("no pude mover lo extraido a {}: {}", game_dir.display(), e))
+    }
+    let _ = fs::remove_dir_all(&previous);
 
     let exe = game_dir.join(exe.file_name().unwrap());
     logf(&format!("listo: {}", exe.display()));
