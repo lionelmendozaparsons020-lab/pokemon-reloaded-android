@@ -60,7 +60,7 @@ fun TouchAppearanceScreen(prefs: Preferences, onBack: () -> Unit) {
                     onClick={update(appearance.copy(style=style))}, label={Text(style.title)},
                     modifier=Modifier.testTag("style-${style.id}"))
             }
-            Text("Moderno usa los sprites semitransparentes; Clasico, los botones suaves con anillos.",style=MaterialTheme.typography.bodySmall)
+            Text("Moderno conserva los sprites originales; Moderno V2 utiliza los nuevos sprites, incluido el botón 8 azul; Clásico mantiene los botones con anillos.",style=MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { context.startActivity(android.content.Intent(context, TouchAssetsActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Cambiar sprites · Importar y exportar")
             }
@@ -120,14 +120,21 @@ internal fun touchResumeRevision(): Int {
 internal fun controlImages(appearance: TouchAppearance, revision: Int = 0, profile: TouchProfile = TouchProfile.WORLD): Map<String,ImageBitmap> {
     val context=LocalContext.current
     val resumed=touchResumeRevision()
-    return remember(appearance.colorHex,revision,resumed,profile) {
+    return remember(appearance.style,appearance.colorHex,revision,resumed,profile) {
         val images=mutableMapOf<String,ImageBitmap>()
         for (target in TouchSprites.targets) {
             val name = target.asset ?: continue
             val asset = TouchSprites.bundledAsset(target.id, profile) ?: continue
-            runCatching {context.assets.open(asset).use {stream -> BitmapFactory.decodeStream(stream)?.let {bitmap ->
-                images[name]=TouchAppearance.image(bitmap, appearance.tint)
-            }}}
+            val styledAsset = if (appearance.style == TouchStyle.MODERN_V2) {
+                ModernoV2Sprites.forPreview(asset, target.id, profile)
+            } else asset
+            runCatching {
+                val bytes = runCatching { context.assets.open(styledAsset).use { it.readBytes() } }
+                    .getOrElse { context.assets.open(asset).use { it.readBytes() } }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { bitmap ->
+                    images[name] = TouchAppearance.image(bitmap, appearance.tint)
+                }
+            }
         }
         val custom=Preferences(context).touchSprites
         for (target in TouchSprites.targets) runCatching {TouchSprites.read(context,TouchSprites.effectiveKey(target.id,profile,custom),custom)?.let {bytes ->
@@ -145,14 +152,14 @@ internal fun controlImages(appearance: TouchAppearance, revision: Int = 0, profi
 private fun AppearanceSample(appearance:TouchAppearance,opacity:Float,feedback:TouchFeedback) {
     val view=LocalView.current
     val images=controlImages(appearance)
-    val specs=remember { listOf("z","x","alpha1","b").map { id->TouchLayouts.controls.first { it.id==id } } }
+    val specs=remember { listOf("z","x","alpha8","b").map { id->TouchLayouts.controls.first { it.id==id } } }
     var pressed by remember { mutableStateOf<Int?>(null) }
     val current by rememberUpdatedState(appearance)
     val progress by animateFloatAsState(if(pressed!=null && appearance.animations)1f else 0f,tween(if(pressed!=null)55 else 80),label="button-press")
     var releasing by remember { mutableStateOf(0) }
     val paint=remember { Paint(Paint.ANTI_ALIAS_FLAG).apply {textAlign=Paint.Align.CENTER;typeface=android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD)} }
     Canvas(Modifier.fillMaxWidth().height(140.dp).background(Color(0xFF131B25),RoundedCornerShape(20.dp))
-        .testTag("appearance-preview").semantics {contentDescription="Botones de prueba Z, X, 1 y B"}
+        .testTag("appearance-preview").semantics {contentDescription="Botones de prueba Z, X, 8 y B"}
         .pointerInput(Unit) {
             awaitEachGesture {
                 val down=awaitFirstDown();val index=(down.position.x/size.width*specs.size).toInt().coerceIn(0,specs.lastIndex)
@@ -172,7 +179,7 @@ internal fun DrawScope.drawControl(spec:TouchControlSpec,g:TouchGeometry,appeara
     val radius=g.radius*scale;val halfWidth=g.halfWidth*scale;val center=Offset(g.x,g.y)
     val sprite = images["custom/"+spec.id] ?: spec.asset?.let { images[it] }
     // Moderno: the artwork we already had.
-    if (appearance.style == TouchStyle.MODERN && sprite != null) {
+    if (appearance.style != TouchStyle.CLASSIC && sprite != null) {
         drawImage(sprite,dstOffset=IntOffset((g.x-halfWidth).roundToInt(),(g.y-radius).roundToInt()),
             dstSize=IntSize((halfWidth*2).roundToInt().coerceAtLeast(1),(radius*2).roundToInt().coerceAtLeast(1)),
             alpha=alpha,filterQuality=FilterQuality.None,
