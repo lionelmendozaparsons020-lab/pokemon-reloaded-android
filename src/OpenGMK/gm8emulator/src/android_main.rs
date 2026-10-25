@@ -369,49 +369,72 @@ static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
 
 /// Android key events may arrive between game frames; a tap must survive the next sample.
 /// Repeated bag arrows require DOWN and UP in separate frames, not one held key forever.
+/// Keep reliable, frame-visible taps for SEL and other buttons; finger-scrolling
+/// uses shorter, separately paced arrow taps so the selection tracks the finger.
+#[derive(Clone, Copy)]
+struct QueuedTap { key: Key, navigation: bool }
 enum TapPhase {
     Idle,
-    Pressed { key: Key, started: Instant, frame: u64 },
-    Released { since: Instant, frame: u64 },
+    Pressed { key: Key, started: Instant, frame: u64, navigation: bool },
+    Released { since: Instant, frame: u64, navigation: bool },
 }
-struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<Key> }
+struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<QueuedTap> }
 static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
     phase: TapPhase::Idle, queued: std::collections::VecDeque::new(),
 });
 const TAP_HOLD: Duration = Duration::from_millis(55);
 const TAP_GAP: Duration = Duration::from_millis(25);
+const SCROLL_HOLD: Duration = Duration::from_millis(22);
+const SCROLL_GAP: Duration = Duration::from_millis(8);
+const SCROLL_FRAME_FALLBACK: Duration = Duration::from_millis(70);
 
 fn tap_key(key: Key) {
     if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
     let mut taps = TAPS.lock().unwrap();
-    if taps.queued.len() < 32 { taps.queued.push_back(key); }
+    if taps.queued.len() < 32 { taps.queued.push_back(QueuedTap { key, navigation: false }); }
+}
+/// At most one pending finger-scroll key; don't accumulate a second delayed queue
+/// behind touch_navigation's own bounded displacement queue.
+fn scroll_tap_capacity() -> bool { TAPS.lock().unwrap().queued.is_empty() }
+fn tap_scroll_key(key: Key) {
+    if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
+    let mut taps = TAPS.lock().unwrap();
+    if taps.queued.is_empty() { taps.queued.push_back(QueuedTap { key, navigation: true }); }
 }
 fn flush_tapped_keys() {
     let mut taps = TAPS.lock().unwrap();
     let frame = crate::touch_navigation::frame();
+    let nav_active = crate::touch_navigation::active();
+    if !nav_active { taps.queued.retain(|tap| !tap.navigation); }
     let phase = std::mem::replace(&mut taps.phase, TapPhase::Idle);
     taps.phase = match phase {
-        TapPhase::Pressed { key, started, frame: first_frame } => {
+        TapPhase::Pressed { key, started, frame: first_frame, navigation } => {
             let elapsed = started.elapsed();
-            if elapsed >= TAP_HOLD && (frame != first_frame || elapsed >= Duration::from_millis(170)) {
+            let hold = if navigation { SCROLL_HOLD } else { TAP_HOLD };
+            let fallback = if navigation { SCROLL_FRAME_FALLBACK } else { Duration::from_millis(170) };
+            if !nav_active && navigation ||
+                (elapsed >= hold && (frame != first_frame || elapsed >= fallback)) {
                 if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
                     android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
                 }
-                TapPhase::Released { since: Instant::now(), frame }
-            } else { TapPhase::Pressed { key, started, frame: first_frame } }
+                TapPhase::Released { since: Instant::now(), frame, navigation }
+            } else { TapPhase::Pressed { key, started, frame: first_frame, navigation } }
         }
-        TapPhase::Released { since, frame: release_frame } => {
-            if since.elapsed() >= TAP_GAP && (frame != release_frame || since.elapsed() >= Duration::from_millis(170)) {
+        TapPhase::Released { since, frame: release_frame, navigation } => {
+            let gap = if navigation { SCROLL_GAP } else { TAP_GAP };
+            let fallback = if navigation { SCROLL_FRAME_FALLBACK } else { Duration::from_millis(170) };
+            if (!nav_active && navigation) ||
+                (since.elapsed() >= gap && (frame != release_frame || since.elapsed() >= fallback)) {
                 TapPhase::Idle
-            } else { TapPhase::Released { since, frame: release_frame } }
+            } else { TapPhase::Released { since, frame: release_frame, navigation } }
         }
         TapPhase::Idle => TapPhase::Idle,
     };
     if matches!(taps.phase, TapPhase::Idle) {
-        while let Some(key) = taps.queued.pop_front() {
-            if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { continue }
-            android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
-            taps.phase = TapPhase::Pressed { key, started: Instant::now(), frame };
+        while let Some(tap) = taps.queued.pop_front() {
+            if crate::touch_controls::key_held_by_buttons(tap.key) || joystick_holds(tap.key) { continue }
+            android::push_input(ramen::platform::android::InputEvent::KeyDown { key: tap.key, text: None });
+            taps.phase = TapPhase::Pressed { key: tap.key, started: Instant::now(), frame, navigation: tap.navigation };
             break
         }
     }
@@ -1594,7 +1617,9 @@ pub fn android_entry(app: AndroidApp) {
         }
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
-        if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
+        if scroll_tap_capacity() {
+            if let Some(key)=crate::touch_navigation::next_key(){tap_scroll_key(key);}
+        }
         flush_tapped_keys();
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
