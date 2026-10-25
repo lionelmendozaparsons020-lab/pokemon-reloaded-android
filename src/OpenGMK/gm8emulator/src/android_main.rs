@@ -367,51 +367,78 @@ static POINTER_CONTROLS: Mutex<Option<HashMap<i32, usize>>> = Mutex::new(None);
 /// The pointer the party wheel is following, if any.
 static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
 
-/// Android key events may arrive between game frames; a tap must survive the next sample.
-/// Repeated bag arrows require DOWN and UP in separate frames, not one held key forever.
+/// Keep the proven SEL/party key timings unchanged. Only menu swipe arrows
+/// use a faster press/gap so the list tracks the finger instead of lagging behind.
+#[derive(Clone,Copy)]
+enum TapSpeed { Normal, MenuSwipe }
+impl TapSpeed {
+    fn hold(self)->Duration{
+        match self { Self::Normal=>Duration::from_millis(55),Self::MenuSwipe=>Duration::from_millis(24) }
+    }
+    fn gap(self)->Duration{
+        match self { Self::Normal=>Duration::from_millis(25),Self::MenuSwipe=>Duration::from_millis(10) }
+    }
+    // Modal menus do not always redraw each frame; avoid waiting 170ms in that case.
+    fn frame_fallback(self)->Duration{
+        match self { Self::Normal=>Duration::from_millis(170),Self::MenuSwipe=>Duration::from_millis(46) }
+    }
+}
+#[derive(Clone,Copy)]
+struct TapRequest { key:Key, speed:TapSpeed }
 enum TapPhase {
     Idle,
-    Pressed { key: Key, started: Instant, frame: u64 },
-    Released { since: Instant, frame: u64 },
+    Pressed { request:TapRequest, started:Instant, frame:u64 },
+    Released { since:Instant, frame:u64, speed:TapSpeed },
 }
-struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<Key> }
-static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
-    phase: TapPhase::Idle, queued: std::collections::VecDeque::new(),
+struct TapSequence { phase:TapPhase, queued:std::collections::VecDeque<TapRequest> }
+static TAPS:Mutex<TapSequence>=Mutex::new(TapSequence {
+    phase:TapPhase::Idle, queued:std::collections::VecDeque::new(),
 });
-const TAP_HOLD: Duration = Duration::from_millis(55);
-const TAP_GAP: Duration = Duration::from_millis(25);
 
-fn tap_key(key: Key) {
-    if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
-    let mut taps = TAPS.lock().unwrap();
-    if taps.queued.len() < 32 { taps.queued.push_back(key); }
+fn queue_tap(key:Key,speed:TapSpeed) {
+    if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) {return}
+    let mut taps=TAPS.lock().unwrap();
+    if taps.queued.len()<16 {taps.queued.push_back(TapRequest{key,speed});}
+}
+fn tap_key(key:Key){queue_tap(key,TapSpeed::Normal);}
+fn tap_menu_swipe(key:Key){queue_tap(key,TapSpeed::MenuSwipe);}
+fn menu_swipe_ready()->bool{
+    let taps=TAPS.lock().unwrap();
+    matches!(taps.phase,TapPhase::Idle) && taps.queued.is_empty()
 }
 fn flush_tapped_keys() {
-    let mut taps = TAPS.lock().unwrap();
-    let frame = crate::touch_navigation::frame();
-    let phase = std::mem::replace(&mut taps.phase, TapPhase::Idle);
-    taps.phase = match phase {
-        TapPhase::Pressed { key, started, frame: first_frame } => {
-            let elapsed = started.elapsed();
-            if elapsed >= TAP_HOLD && (frame != first_frame || elapsed >= Duration::from_millis(170)) {
-                if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
-                    android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
+    let mut taps=TAPS.lock().unwrap();
+    let frame=crate::touch_navigation::frame();
+    let phase=std::mem::replace(&mut taps.phase,TapPhase::Idle);
+    taps.phase=match phase {
+        TapPhase::Pressed{request,started,frame:first_frame}=>{
+            let elapsed=started.elapsed();
+            if elapsed>=request.speed.hold()
+                && (frame!=first_frame || elapsed>=request.speed.frame_fallback()) {
+                if !crate::touch_controls::key_held_by_buttons(request.key)
+                    && !joystick_holds(request.key) {
+                    android::push_input(ramen::platform::android::InputEvent::KeyUp{key:request.key});
                 }
-                TapPhase::Released { since: Instant::now(), frame }
-            } else { TapPhase::Pressed { key, started, frame: first_frame } }
+                TapPhase::Released{since:Instant::now(),frame,speed:request.speed}
+            }else{TapPhase::Pressed{request,started,frame:first_frame}}
         }
-        TapPhase::Released { since, frame: release_frame } => {
-            if since.elapsed() >= TAP_GAP && (frame != release_frame || since.elapsed() >= Duration::from_millis(170)) {
+        TapPhase::Released{since,frame:release_frame,speed}=>{
+            let elapsed=since.elapsed();
+            if elapsed>=speed.gap()
+                && (frame!=release_frame || elapsed>=speed.frame_fallback()) {
                 TapPhase::Idle
-            } else { TapPhase::Released { since, frame: release_frame } }
+            }else{TapPhase::Released{since,frame:release_frame,speed}}
         }
-        TapPhase::Idle => TapPhase::Idle,
+        TapPhase::Idle=>TapPhase::Idle,
     };
-    if matches!(taps.phase, TapPhase::Idle) {
-        while let Some(key) = taps.queued.pop_front() {
-            if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { continue }
-            android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
-            taps.phase = TapPhase::Pressed { key, started: Instant::now(), frame };
+    if matches!(taps.phase,TapPhase::Idle) {
+        while let Some(request)=taps.queued.pop_front() {
+            if crate::touch_controls::key_held_by_buttons(request.key)
+                || joystick_holds(request.key) {continue}
+            android::push_input(ramen::platform::android::InputEvent::KeyDown{
+                key:request.key,text:None
+            });
+            taps.phase=TapPhase::Pressed{request,started:Instant::now(),frame};
             break
         }
     }
@@ -1594,8 +1621,15 @@ pub fn android_entry(app: AndroidApp) {
         }
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
-        if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
         flush_tapped_keys();
+        // Schedule at most one swipe key at a time. This prevents stale input
+        // piling up when the finger reverses direction or stops moving.
+        if menu_swipe_ready(){
+            if let Some(key)=crate::touch_navigation::next_key(){
+                tap_menu_swipe(key);
+                flush_tapped_keys();
+            }
+        }
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
             android::push_input(if down {InputEvent::PointerDown{x,y,button:0}} else {InputEvent::PointerUp{x,y,button:0}});
