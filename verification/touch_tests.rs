@@ -135,3 +135,36 @@ fn bag_modal_in_same_room_restores_navigation_then_exits_cleanly() {
     assert!(!touch_navigation::bag_open());
     assert_eq!(tc::current_context(),tc::WORLD);
 }
+
+#[test]
+fn swipe_menu_responds_to_short_motion_and_stops_at_finger_release() {
+    use touch_controls as tc;
+    use std::time::Duration;
+    tc::set_room(312);
+    tc::set_modal_id(-1);
+    touch_navigation::report(312,-1,true);
+    assert_eq!(tc::current_context(),tc::MENU_NAV);
+    assert!(touch_navigation::begin(519,300.0,300.0,720.0));
+    assert!(touch_navigation::moved(519,300.0,280.0));
+    assert_eq!(touch_navigation::next_key(),None,"a small drag should not need a large jump");
+    assert!(touch_navigation::moved(519,300.0,255.0));
+    assert_eq!(touch_navigation::next_key(),Some(input::Key::DownArrow));
+    assert!(touch_navigation::moved(519,300.0,390.0));
+    std::thread::sleep(Duration::from_millis(25));
+    assert_eq!(touch_navigation::next_key(),Some(input::Key::UpArrow),
+        "reversing a swipe must immediately discard old down keys");
+    assert!(touch_navigation::moved(519,300.0,50.0));
+    assert_eq!(touch_navigation::end(519,300.0,50.0),None);
+    std::thread::sleep(Duration::from_millis(25));
+    assert_eq!(touch_navigation::next_key(),None,
+        "a released finger must not leave a delayed list of scroll steps");
+}
+
+#[test]
+fn menu_navigation_key_pulses_are_fast_and_still_separated() {
+    use std::time::Duration;
+    assert!(touch_navigation::NAV_TAP_HOLD>=Duration::from_millis(25));
+    assert!(touch_navigation::NAV_TAP_GAP>=Duration::from_millis(8));
+    assert!(touch_navigation::NAV_HOLD_FALLBACK+touch_navigation::NAV_GAP_FALLBACK<=Duration::from_millis(85),
+        "menu arrows must not be forced to wait hundreds of milliseconds for redraws");
+}
