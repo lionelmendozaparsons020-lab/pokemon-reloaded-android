@@ -98,3 +98,40 @@ fn small_touch_stick_motion_preserves_gamepad_deadzone() {
     assert_eq!(touch(f32::NAN,0.0),[false;4]);
     assert_eq!(pad(0.11,0.0),[false;4]);
 }
+
+
+#[test]
+fn exploration_sel_uses_seven_reachable_hexagon_centers() {
+    let (w,h)=(2400.0,1080.0);
+    let (left,top,width,height)=field_controls::rect(w,h);
+    for (index, (sx,sy)) in field_controls::CENTERS.iter().copied().enumerate() {
+        let x=left+(sx-144.0)/966.0*width;
+        let y=top+(sy-116.0)/1022.0*height;
+        assert!(field_controls::inside_wheel(x,y,w,h));
+        assert_eq!(field_controls::item_at(x,y,w,h),Some(index));
+    }
+    assert_eq!(field_controls::item_at(0.0,0.0,w,h),None);
+    assert_eq!(field_controls::item_at(-3.0,-2.0,w,h),None);
+}
+
+#[test]
+fn bag_modal_in_same_room_restores_navigation_then_exits_cleanly() {
+    use touch_controls as tc;
+    tc::set_room(100);
+    tc::set_modal_id(-1);
+    touch_navigation::report(100,-1,false);
+    assert!(!touch_navigation::bag_open());
+    touch_navigation::arm_bag();
+    touch_navigation::report(100,8192,false);
+    tc::set_modal_id(8192);
+    assert!(touch_navigation::bag_open());
+    assert_eq!(tc::current_context(),tc::MENU_NAV);
+    let mut gesture=touch_navigation::Gesture::new(101,100.0,200.0,720.0,touch_navigation::identity());
+    assert_eq!(gesture.moved(100.0,198.0),0);
+    assert!(gesture.moved(100.0,100.0)>0,"swiping up navigates down through items");
+    assert!(gesture.moved(100.0,220.0)<0,"swiping down navigates up through items");
+    touch_navigation::report(100,-1,false);
+    tc::set_modal_id(-1);
+    assert!(!touch_navigation::bag_open());
+    assert_eq!(tc::current_context(),tc::WORLD);
+}
