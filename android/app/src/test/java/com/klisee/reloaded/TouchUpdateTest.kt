@@ -51,4 +51,19 @@ world joystick 0.15 0.65 0.8 1
             assertTrue(a.y - a.radius >= 0f)
         }
     }
+
+    @Test fun modernV2IsAnIndependentPersistentStyle() {
+        val base = TouchAppearance()
+        assertEquals(TouchStyle.MODERN, base.style)
+        val v2 = base.copy(style = TouchStyle.MODERN_V2)
+        assertEquals("modern_v2", v2.style.id)
+        assertEquals(TouchStyle.MODERN_V2, TouchAppearance.parse(v2.encode()).style)
+        assertEquals(TouchStyle.MODERN, TouchAppearance.parse(base.encode()).style)
+        assertEquals(TouchStyle.CLASSIC, TouchAppearance.parse("touch-appearance-v1\nstyle=classic\n").style)
+        assertTrue(ModernoV2Sprites.files.contains("alpha8.png"))
+        assertEquals("moderno-v2/alpha8.png",
+            ModernoV2Sprites.forPreview("alpha8.png", "alpha8", TouchProfile.WORLD))
+        assertEquals("moderno-v2/world__a.png",
+            ModernoV2Sprites.forPreview("a.png", "a", TouchProfile.WORLD))
+    }
 }
