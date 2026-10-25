@@ -372,19 +372,32 @@ static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
 enum TapPhase {
     Idle,
     Pressed { key: Key, started: Instant, frame: u64 },
-    Released { since: Instant, frame: u64 },
+    Released { since: Instant, frame: u64, navigation: bool },
 }
 struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<Key> }
 static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
     phase: TapPhase::Idle, queued: std::collections::VecDeque::new(),
 });
+// Field shortcuts and confirmations retain their reliable, longer tap timing.
+// Only arrow pulses used for finger-driven menu scrolling are accelerated.
 const TAP_HOLD: Duration = Duration::from_millis(55);
 const TAP_GAP: Duration = Duration::from_millis(25);
+const NAV_HOLD: Duration = Duration::from_millis(20);
+const NAV_GAP: Duration = Duration::from_millis(8);
+const NAV_FRAME_FALLBACK: Duration = Duration::from_millis(70);
+const NAV_GAP_FALLBACK: Duration = Duration::from_millis(30);
+fn navigation_key(key: Key) -> bool {
+    matches!(key, Key::UpArrow | Key::DownArrow)
+}
+fn navigation_tap_ready() -> bool {
+    let taps = TAPS.lock().unwrap();
+    matches!(taps.phase, TapPhase::Idle) && taps.queued.is_empty()
+}
 
 fn tap_key(key: Key) {
     if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
     let mut taps = TAPS.lock().unwrap();
-    if taps.queued.len() < 32 { taps.queued.push_back(key); }
+    if taps.queued.len() < 8 { taps.queued.push_back(key); }
 }
 fn flush_tapped_keys() {
     let mut taps = TAPS.lock().unwrap();
@@ -393,17 +406,22 @@ fn flush_tapped_keys() {
     taps.phase = match phase {
         TapPhase::Pressed { key, started, frame: first_frame } => {
             let elapsed = started.elapsed();
-            if elapsed >= TAP_HOLD && (frame != first_frame || elapsed >= Duration::from_millis(170)) {
+            let navigation = navigation_key(key);
+            let hold = if navigation { NAV_HOLD } else { TAP_HOLD };
+            let fallback = if navigation { NAV_FRAME_FALLBACK } else { Duration::from_millis(170) };
+            if elapsed >= hold && (frame != first_frame || elapsed >= fallback) {
                 if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
                     android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
                 }
-                TapPhase::Released { since: Instant::now(), frame }
+                TapPhase::Released { since: Instant::now(), frame, navigation }
             } else { TapPhase::Pressed { key, started, frame: first_frame } }
         }
-        TapPhase::Released { since, frame: release_frame } => {
-            if since.elapsed() >= TAP_GAP && (frame != release_frame || since.elapsed() >= Duration::from_millis(170)) {
+        TapPhase::Released { since, frame: release_frame, navigation } => {
+            let gap = if navigation { NAV_GAP } else { TAP_GAP };
+            let fallback = if navigation { NAV_GAP_FALLBACK } else { Duration::from_millis(170) };
+            if since.elapsed() >= gap && (frame != release_frame || since.elapsed() >= fallback) {
                 TapPhase::Idle
-            } else { TapPhase::Released { since, frame: release_frame } }
+            } else { TapPhase::Released { since, frame: release_frame, navigation } }
         }
         TapPhase::Idle => TapPhase::Idle,
     };
@@ -538,7 +556,13 @@ fn pointer_down(id: i32, x: f32, y: f32) {
         return
     }
     if hit.is_none()&&crate::touch_navigation::active(){
-        if !crate::touch_navigation::begin(id,x,y,hf){SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);}return
+        if crate::touch_navigation::begin(id,x,y,hf) {
+            // Some menus respond to hover as soon as the finger enters a row.
+            android::push_input(ramen::platform::android::InputEvent::PointerMoved { x, y });
+        } else {
+            SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+        }
+        return
     }
     match hit {
         Some(index) => {
@@ -913,7 +937,12 @@ fn translate(event: &InputEvent) {
                     for p in motion.pointers() {
                         if SWALLOWED_INPUTS.lock().unwrap().as_ref().is_some_and(|ids|ids.contains(&p.pointer_id())){continue}
                         if BOX_TOUCH.lock().unwrap().moved(p.pointer_id(), crate::box_touch::Point(p.x(), p.y()), Instant::now()) { continue }
-                        if crate::touch_navigation::moved(p.pointer_id(),p.x(),p.y()){continue}
+                        if crate::touch_navigation::moved(p.pointer_id(),p.x(),p.y()){
+                            // Immediate cursor tracking for menus that support hovering.
+                            // The bounded arrow queue remains a fallback for keyboard-only lists.
+                            android::push_input(ramen::platform::android::InputEvent::PointerMoved {x:p.x(),y:p.y()});
+                            continue
+                        }
                         if wheel_ptr == Some(p.pointer_id()) {
                             let (w, h) = android::window_size();
                             let (wf, hf) = (w as f32, h as f32);
@@ -1594,8 +1623,15 @@ pub fn android_entry(app: AndroidApp) {
         }
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
-        if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
+        // Consume a new drag step only after the previous DOWN and UP have
+        // actually reached the game. Otherwise queued pulses lag behind the finger.
         flush_tapped_keys();
+        if navigation_tap_ready() {
+            if let Some(key)=crate::touch_navigation::next_key(){
+                tap_key(key);
+                flush_tapped_keys();
+            }
+        }
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
             android::push_input(if down {InputEvent::PointerDown{x,y,button:0}} else {InputEvent::PointerUp{x,y,button:0}});
