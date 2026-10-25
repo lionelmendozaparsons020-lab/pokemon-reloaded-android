@@ -977,9 +977,15 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
     let mut slots: [Option<SkinSlot>; MAX_SKIN_SLOTS] = [None; MAX_SKIN_SLOTS];
     // Same folder the launcher writes `controls.conf` and `layout.conf` to.
     let dir = crate::android_main::storage_dir().to_string_lossy().into_owned();
+    // Select the second built-in skin only for Moderno V2. The original assets
+    // and user-imported sprites remain untouched and user overrides always win.
+    let modern_v2 = crate::touch_appearance::settings().style == crate::touch_appearance::Style::ModernV2;
     let mut images: Vec<(&'static str, image::RgbaImage, bool, u8, bool)> = Vec::new();
     let load = |name: &str, fallback: &str| {
         image::open(format!("{}/touch-sprites-active/{}.png", dir, name)).ok().map(|img| (img,true))
+            .or_else(|| if modern_v2 {
+                image::open(format!("{}/moderno-v2/{}", dir, fallback)).ok().map(|img| (img,false))
+            } else { None })
             .or_else(|| image::open(format!("{}/{}", dir, fallback)).ok().map(|img| (img,false)))
     };
     for (name, file) in [
@@ -1012,9 +1018,11 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
             let original=std::path::Path::new(&format!("{}/touch-sprites-active/{}__{}.original",dir,prefix,name)).is_file();
             let scoped=format!("{}/touch-sprites-active/{}__{}.png",dir,prefix,name);
             let bundled=format!("{}/{}__{}.png",dir,prefix,name);
+            let styled=format!("{}/moderno-v2/{}__{}.png",dir,prefix,name);
             let legacy=format!("{}/touch-sprites-active/{}.png",dir,name);
             let (file,custom)=if !original && std::path::Path::new(&scoped).is_file(){(scoped,true)}
                 else if !original && std::path::Path::new(&legacy).is_file(){continue}
+                else if modern_v2 && std::path::Path::new(&styled).is_file(){(styled,false)}
                 else if std::path::Path::new(&bundled).is_file(){(bundled,false)}
                 else if original{(format!("{}/{}.png",dir,name),false)}else{continue};
             if let Ok(img)=image::open(file){
@@ -1941,7 +1949,7 @@ impl RendererImpl {
                 touch_controls::Shape::Circle { cx, cy, .. } | touch_controls::Shape::Rect { cx, cy, .. } => (cx, cy),
             };
             // Moderno: the artwork we already had, drawn semi-transparent.
-            if appearance.style == crate::touch_appearance::Style::Modern {
+            if matches!(appearance.style, crate::touch_appearance::Style::Modern | crate::touch_appearance::Style::ModernV2) {
                 if let Some(uv) = overlay.art(c.name) {
                     let (cx, cy, half) = match touch_controls::window_shape_for(i, ww, wh) {
                         touch_controls::Shape::Circle { cx, cy, r } => (cx * ww, cy * wh, r * ww),
@@ -2008,7 +2016,7 @@ impl RendererImpl {
             let (ox, oy) = stick_offset;
             let mut drew_sprite = false;
             // Artwork is for the joystick; D-pad mode keeps its drawn cross.
-            if appearance.style == crate::touch_appearance::Style::Modern
+            if matches!(appearance.style, crate::touch_appearance::Style::Modern | crate::touch_appearance::Style::ModernV2)
                 && touch_controls::move_mode() == touch_controls::MoveMode::Joystick {
                 if let (Some(base), Some(knob)) = (overlay.art("joystick"), overlay.art("joystick-knob")) {
                     let start = sprites.len();
