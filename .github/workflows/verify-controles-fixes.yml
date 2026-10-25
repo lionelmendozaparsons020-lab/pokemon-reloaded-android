@@ -37,3 +37,30 @@ jobs:
       - name: Compile Android and run touch unit tests
         working-directory: android
         run: gradle --no-daemon :app:testReleaseUnitTest -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false -PcontrolsBuild=true -PtargetAbi=arm64-v8a
+  native-android-arm64-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install NDK
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018'
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/OpenGMK/target
+          key: controles-arm64-rust199-ndk27-16k-${{ hashFiles('src/OpenGMK/Cargo.lock', 'src/OpenGMK/gm8emulator/src/**/*.rs', 'vendor/**/*.rs') }}
+      - name: Install Rust and Android target
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup target add --toolchain 1.99.0 aarch64-linux-android
+          cargo +1.99.0 install cargo-ndk --version 3.5.4 --locked
+      - name: Check ARM64 native engine without publishing APK
+        working-directory: src/OpenGMK
+        run: cargo +1.99.0 ndk -t arm64-v8a --platform 29 build -p gm8emulator --lib --release --locked
