@@ -20,11 +20,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.4.1'
+          cache-read-only: false
       - name: Install Android build tools
         run: |
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;27.2.12479018'
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/OpenGMK/target
+          key: controles-arm64-rust199-ndk27-16k-${{ hashFiles('src/OpenGMK/Cargo.lock', 'src/OpenGMK/gm8emulator/src/**/*.rs', 'vendor/**/*.rs') }}
       - name: Install Rust
         run: |
           rustup toolchain install 1.99.0 --profile minimal
@@ -39,7 +47,7 @@ jobs:
         run: cargo +1.99.0 ndk -t arm64-v8a --platform 29 build -p gm8emulator --lib --release --locked
       - name: Test Android and build unsigned Controles APK
         working-directory: android
-        run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease -PcontrolsBuild=true -PtargetAbi=arm64-v8a
+        run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false -PcontrolsBuild=true -PtargetAbi=arm64-v8a
       - uses: actions/upload-artifact@v4
         with:
           name: controles-039-arm64-unsigned

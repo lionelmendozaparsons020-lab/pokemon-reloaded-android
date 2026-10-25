@@ -10,4 +10,4 @@ Integración de v0.3.9 con la rama de controles táctiles personalizada.
 
 La compilación oficial mantiene su identidad. Con `-PcontrolsBuild=true` se genera `com.klisee.reloaded.controles`, versión `0.3.9-controles`, código 20. La clave privada permanece fuera de Git. El workflow entrega un APK sin firma; debe firmarse localmente con la clave Controles antes de instalarse.
 
-Validación: `rustc --edition=2021 --test verification/touch_tests.rs -o /tmp/touch-tests && /tmp/touch-tests --test-threads=1`; `gradle :app:testReleaseUnitTest :app:assembleRelease -PcontrolsBuild=true` después de compilar el motor ARM64. La prueba física de la sensación del joystick requiere el dispositivo.
+Validación: `rustc --edition=2021 --test verification/touch_tests.rs -o /tmp/touch-tests && /tmp/touch-tests --test-threads=1`; `gradle :app:testReleaseUnitTest :app:assembleRelease -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false -PcontrolsBuild=true` después de compilar el motor ARM64. La prueba física de la sensación del joystick requiere el dispositivo.
