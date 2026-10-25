@@ -135,3 +135,43 @@ fn bag_modal_in_same_room_restores_navigation_then_exits_cleanly() {
     assert!(!touch_navigation::bag_open());
     assert_eq!(tc::current_context(),tc::WORLD);
 }
+
+
+#[test]
+fn finger_swipes_scroll_rapidly_without_large_delayed_key_backlog() {
+    use touch_controls as tc;
+    use touch_navigation as nav;
+    use input::Key;
+    tc::set_room(100);
+    tc::set_box_open(false);
+    tc::set_modal_id(7778); // the Enter/N item-list navigation profile
+    nav::report(100,7778,false);
+    nav::cancel();
+    assert!(nav::active());
+
+    // A short drag already produces an arrow. Previously a full ~40px
+    // movement on a 720px window was needed, followed by 55ms pacing.
+    let mut gesture=nav::Gesture::new(21,300.0,500.0,720.0,nav::identity());
+    assert_eq!(gesture.moved(300.0,492.0),0);
+    assert_eq!(gesture.moved(300.0,464.0),1);
+    assert!(gesture.dragged);
+
+    assert!(nav::begin(99,300.0,500.0,720.0));
+    assert!(nav::moved(99,300.0,425.0));
+    assert_eq!(nav::next_key(),Some(Key::DownArrow));
+
+    // A reversal discards obsolete direction requests rather than moving
+    // the selection in the wrong direction long after the finger turns.
+    assert!(nav::moved(99,300.0,590.0));
+    assert!(nav::end(99,300.0,630.0).is_none());
+    let mut rest=Vec::new();
+    for _ in 0..5 {
+        std::thread::sleep(std::time::Duration::from_millis(14));
+        if let Some(key)=nav::next_key(){rest.push(key);}
+    }
+    assert!(rest.len()<=3,"released gestures must not leave a long backlog");
+    assert!(rest.iter().all(|key|*key==Key::UpArrow));
+    nav::cancel();
+    tc::set_modal_id(-1);
+    nav::report(100,-1,false);
+}
