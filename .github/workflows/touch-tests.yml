@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - integracion-controles-touch-035
+      - fix-039-sel-bag-haptics
     paths:
       - "src/OpenGMK/gm8emulator/src/**"
       - "verification/**"
