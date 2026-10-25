@@ -135,3 +135,53 @@ fn bag_modal_in_same_room_restores_navigation_then_exits_cleanly() {
     assert!(!touch_navigation::bag_open());
     assert_eq!(tc::current_context(),tc::WORLD);
 }
+
+
+#[test]
+fn menu_swipes_track_short_finger_motions_without_delayed_step_queue() {
+    use touch_controls as tc;
+    use input::Key;
+    tc::set_room(100);
+    tc::set_modal_id(7778);
+    tc::set_box_open(false);
+    touch_navigation::report(100,7778,false);
+    assert_eq!(tc::current_context(),tc::MENU_NAV);
+
+    // A 24px drag should already move the menu at 720px screen height.
+    let mut gesture=touch_navigation::Gesture::new(77,100.0,300.0,720.0,touch_navigation::identity());
+    assert_eq!(gesture.moved(100.0,297.0),0);
+    assert_eq!(gesture.moved(100.0,276.0),1);
+
+    assert!(touch_navigation::begin(78,100.0,300.0,720.0));
+    assert!(touch_navigation::moved(78,100.0,70.0));
+    let mut count=0;
+    while touch_navigation::next_key()==Some(Key::DownArrow){
+        count+=1;
+        assert!(count<=6,"limit swipe backlog to six pending key presses");
+    }
+    assert_eq!(count,6);
+
+    // Reversing the finger must discard old downward requests immediately.
+    assert!(touch_navigation::moved(78,100.0,350.0));
+    assert_eq!(touch_navigation::next_key(),Some(Key::UpArrow));
+    touch_navigation::cancel();
+    tc::set_modal_id(-1);
+    touch_navigation::report(100,-1,false);
+}
+
+#[test]
+fn releasing_a_menu_swipe_keeps_its_last_vertical_motion() {
+    use touch_controls as tc;
+    use input::Key;
+    tc::set_room(100);
+    tc::set_modal_id(7778);
+    touch_navigation::report(100,7778,false);
+    assert!(touch_navigation::begin(79,100.0,300.0,720.0));
+    assert!(touch_navigation::moved(79,100.0,287.0));
+    // The final 30px only arrived on pointer-up.
+    assert_eq!(touch_navigation::end(79,100.0,257.0),None);
+    assert_eq!(touch_navigation::next_key(),Some(Key::DownArrow));
+    touch_navigation::cancel();
+    tc::set_modal_id(-1);
+    touch_navigation::report(100,-1,false);
+}
