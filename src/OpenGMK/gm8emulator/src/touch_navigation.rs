@@ -5,20 +5,41 @@ use ramen::input::Key;
 pub struct Identity{pub room:i32,pub modal:i32}
 static IDENTITY:Mutex<Identity>=Mutex::new(Identity{room:-1,modal:-1});
 static BAG:Mutex<Option<i32>>=Mutex::new(None);
+// A bag opened as a modal stays active only while that modal is present.
+static BAG_MODAL:Mutex<Option<i32>>=Mutex::new(None);
 static ARMED:Mutex<Option<(Identity,Instant)>>=Mutex::new(None);
 static FRAME:AtomicU64=AtomicU64::new(0);
 pub fn identity()->Identity{*IDENTITY.lock().unwrap()}
+/// Monotonic game report tick, used to keep synthetic key presses visible to the game.
+pub fn frame()->u64{FRAME.load(Ordering::Relaxed)}
 pub fn arm_bag(){*ARMED.lock().unwrap()=Some((identity(),Instant::now()));}
 pub fn disarm_bag(){*ARMED.lock().unwrap()=None;}
 pub fn report(room:i32,modal:i32,named_bag:bool){
-    *IDENTITY.lock().unwrap()=Identity{room,modal};let mut bag=BAG.lock().unwrap();
-    if bag.is_some_and(|id|id!=room){*bag=None;}
+    *IDENTITY.lock().unwrap()=Identity{room,modal};
+    let mut bag=BAG.lock().unwrap();
+    let mut bag_modal=BAG_MODAL.lock().unwrap();
+    if bag.is_some_and(|id|id!=room) || bag_modal.is_some_and(|id|id!=modal){
+        *bag=None;
+        *bag_modal=None;
+    }
     let mut armed=ARMED.lock().unwrap();
     if let Some((old,at))=*armed{
         if at.elapsed()>Duration::from_secs(2){*armed=None;}
-        else if old.room!=room{*bag=Some(room);*armed=None;}
+        else if old.room!=room {
+            *bag=Some(room);
+            *bag_modal=None;
+            *armed=None;
+        } else if old.modal!=modal && modal>=0 {
+            // Some backpacks appear as a list modal inside the *same* room.
+            *bag=Some(room);
+            *bag_modal=Some(modal);
+            *armed=None;
+        }
     }
-    if named_bag{*bag=Some(room);}
+    if named_bag {
+        *bag=Some(room);
+        *bag_modal=None;
+    }
     FRAME.fetch_add(1,Ordering::Relaxed);
 }
 pub fn bag_open()->bool{BAG.lock().unwrap().is_some_and(|id|id==identity().room)}
