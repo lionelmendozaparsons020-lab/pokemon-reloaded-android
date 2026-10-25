@@ -135,3 +135,36 @@ fn bag_modal_in_same_room_restores_navigation_then_exits_cleanly() {
     assert!(!touch_navigation::bag_open());
     assert_eq!(tc::current_context(),tc::WORLD);
 }
+
+
+#[test]
+fn menu_drag_responds_within_one_row_without_building_a_long_queue() {
+    use touch_controls as tc;
+    tc::set_room(100);
+    tc::set_modal_id(7778);
+    touch_navigation::report(100, 7778, false);
+    assert!(touch_navigation::active());
+
+    let id = 730;
+    assert!(touch_navigation::begin(id, 400.0, 510.0, 1080.0));
+    assert!(touch_navigation::moved(id, 400.0, 475.0));
+    assert_eq!(touch_navigation::next_key(), Some(input::Key::DownArrow),
+        "35px movement at 1080p should already scroll one row");
+
+    assert!(touch_navigation::moved(id, 400.0, 190.0));
+    assert!(touch_navigation::pending_steps() <= 3,
+        "fast swipes must not queue seconds of delayed movement");
+
+    assert!(touch_navigation::moved(id, 400.0, 530.0));
+    assert_eq!(touch_navigation::next_key(), Some(input::Key::UpArrow),
+        "reversing the drag must discard old downward steps");
+
+    assert_eq!(touch_navigation::end(id, 400.0, 545.0), None);
+    assert!(touch_navigation::pending_steps() <= 1,
+        "lifting the finger must cancel the pending scroll backlog");
+    touch_navigation::report(100, -1, false);
+    tc::set_modal_id(-1);
+    assert_eq!(touch_navigation::next_key(), None,
+        "no menu keys may leak into normal exploration");
+    assert_eq!(touch_navigation::pending_steps(), 0);
+}
