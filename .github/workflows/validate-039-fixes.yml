@@ -1,4 +1,4 @@
-name: Validate SEL bag haptics without publishing an APK
+name: Private encrypted Controles 0.3.9 test build
 on:
   push:
     branches: [fix-039-sel-mochila-vibracion]
@@ -50,3 +50,59 @@ jobs:
       - name: Test Android and compile APK without publishing it
         working-directory: android
         run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false -PcontrolsBuild=true -PtargetAbi=arm64-v8a
+
+      - name: Sign and encrypt private APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/controles-release.jks"
+          APK=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
+          test -n "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/aligned.apk"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/controles-release.jks" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:STORE_PASS \
+            --key-pass env:KEY_PASS \
+            --out "$RUNNER_TEMP/pokemon-reloaded-039-reparado.apk" \
+            "$RUNNER_TEMP/aligned.apk"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify \
+            --verbose --print-certs "$RUNNER_TEMP/pokemon-reloaded-039-reparado.apk"
+          cat > "$RUNNER_TEMP/recipient.pem" <<'PUBLIC_KEY'
+          -----BEGIN PUBLIC KEY-----
+          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAoZGfwWxGjmgkFeFg3VOI
+          tdxnsZyFBGWIT9hVIG8+TaOUg6n4Z8RRjVXWjLR63BFTTjEuzI8umFTyM9Rn+WCm
+          2PX12H8MuCMMEKMWe5scLlIvGMczU1ZoelTzcV1PLiJU/1IQiFrYnEFaV73IpBvZ
+          IuSF394TsHp2jyd1cWxPocrvYUVFzjN/XZ+v2xCeVXgoLeDr/usaAp0u1fhjJXNR
+          TuOTLb8bQQyCg0DjhWRa8eKDVADDPNmg/8JMjP17ItGZ8rv6/vMcW8Fp3jT6kYkx
+          Sf5doVzM5CH7pNhuJxf3tMmmC+HbAKQSO3EOAJKUX5oMbBsEIiIkObawojNTTnQY
+          6t0qZsN7lOr/wMXkUWTdxpVnkQv4bWY6dOE2qOfIdpEOJijqmjjyTPa175EePxf4
+          y3+t2hN9C8btWkrcCgsN1dS0rfA4aHsFoab56z/VrUsl87cpdyjoqg1S+l4PUHiz
+          hckYm85wK8dXTj0OV5Kc5Ewbl1/EjtRib3ESg6i2h11hAgMBAAE=
+          -----END PUBLIC KEY-----
+          PUBLIC_KEY
+          mkdir -p encrypted-apk
+          openssl rand -hex 32 > "$RUNNER_TEMP/encryption-password"
+          openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/recipient.pem" \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 \
+            -in "$RUNNER_TEMP/encryption-password" -out encrypted-apk/key.rsa
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 \
+            -in "$RUNNER_TEMP/pokemon-reloaded-039-reparado.apk" \
+            -out encrypted-apk/pokemon-reloaded-039-reparado.apk.enc \
+            -pass file:"$RUNNER_TEMP/encryption-password"
+          sha256sum "$RUNNER_TEMP/pokemon-reloaded-039-reparado.apk" |
+            sed 's|.*/|  |' > encrypted-apk/sha256.txt
+          rm -f "$RUNNER_TEMP/controles-release.jks" "$RUNNER_TEMP/encryption-password" "$RUNNER_TEMP/pokemon-reloaded-039-reparado.apk"
+
+      - name: Upload encrypted APK only
+        uses: actions/upload-artifact@v4
+        with:
+          name: controles-039-cifrado-no-es-apk
+          if-no-files-found: error
+          retention-days: 1
+          path: encrypted-apk/
