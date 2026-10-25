@@ -98,3 +98,54 @@ fn small_touch_stick_motion_preserves_gamepad_deadzone() {
     assert_eq!(touch(f32::NAN,0.0),[false;4]);
     assert_eq!(pad(0.11,0.0),[false;4]);
 }
+
+
+#[test]
+fn exploration_sel_hexagons_match_each_number_and_close_on_demand() {
+    use touch_controls as tc;
+    use field_controls as field;
+    tc::set_overlay_style(tc::OverlayStyle::Modern);
+    tc::set_pad_active(false);
+    tc::set_info_window(false);
+    tc::set_modal_id(-1);
+    tc::set_room(100);
+    field::close();
+    field::toggle();
+    assert!(field::open(), "exploration SEL must open");
+    let (ww, wh) = (1536.0, 720.0);
+    let (left, top, width, height) = field::rect(ww, wh);
+    let expected = [
+        input::Key::Alpha1, input::Key::Alpha2, input::Key::Alpha3,
+        input::Key::Alpha4, input::Key::Alpha5, input::Key::Alpha6, input::Key::Alpha7,
+    ];
+    for (i, &(sx, sy)) in field::CENTERS.iter().enumerate() {
+        // Invert the same artwork crop used by item_at.
+        let x = left + (sx - 144.0) / 966.0 * width;
+        let y = top + (sy - 116.0) / 1022.0 * height;
+        assert_eq!(field::item_at(x, y, ww, wh), Some(i), "hexagon {i}");
+        assert_eq!(field::KEYS[i], expected[i], "wrong key for hexagon {i}");
+    }
+    field::close();
+    assert!(!field::open());
+}
+
+#[test]
+fn bag_navigation_follows_the_opened_room_and_keeps_movement() {
+    use touch_controls as tc;
+    tc::set_overlay_style(tc::OverlayStyle::Modern);
+    tc::set_pad_active(false);
+    tc::set_info_window(false);
+    tc::set_modal_id(-1);
+    touch_navigation::report(100, -1, false);
+    tc::set_room(100);
+    touch_navigation::arm_bag();
+    touch_navigation::report(200, -1, false);
+    tc::set_room(200);
+    assert!(touch_navigation::bag_open());
+    assert!(touch_navigation::active());
+    assert_eq!(tc::current_context(), tc::MENU_NAV);
+    assert!(tc::movement_active(), "bag must keep the joystick enabled");
+    touch_navigation::report(100, -1, false);
+    tc::set_room(100);
+    assert!(!touch_navigation::bag_open(), "leaving bag should restore normal controls");
+}
