@@ -104,7 +104,7 @@ fn small_touch_stick_motion_preserves_gamepad_deadzone() {
 fn exploration_sel_hexagons_match_each_number_and_close_on_demand() {
     use touch_controls as tc;
     use field_controls as field;
-    tc::set_overlay_style(tc::OverlayStyle::Modern);
+    tc::set_overlay_style(tc::OverlayStyle::New);
     tc::set_pad_active(false);
     tc::set_info_window(false);
     tc::set_modal_id(-1);
@@ -132,7 +132,7 @@ fn exploration_sel_hexagons_match_each_number_and_close_on_demand() {
 #[test]
 fn bag_navigation_follows_the_opened_room_and_keeps_movement() {
     use touch_controls as tc;
-    tc::set_overlay_style(tc::OverlayStyle::Modern);
+    tc::set_overlay_style(tc::OverlayStyle::New);
     tc::set_pad_active(false);
     tc::set_info_window(false);
     tc::set_modal_id(-1);
