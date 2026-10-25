@@ -98,3 +98,31 @@ fn small_touch_stick_motion_preserves_gamepad_deadzone() {
     assert_eq!(touch(f32::NAN,0.0),[false;4]);
     assert_eq!(pad(0.11,0.0),[false;4]);
 }
+
+#[test]
+fn exploration_sel_hexagons_select_all_seven_numbers() {
+    use touch_controls as tc;
+    tc::set_room(100);
+    tc::set_modal_id(-1);
+    tc::set_pad_active(false);
+    tc::set_info_window(false);
+    field_controls::close();
+    field_controls::toggle();
+    assert!(field_controls::open());
+    for (w,h) in [(1536.0,720.0),(2400.0,1080.0),(1600.0,1200.0)] {
+        let (left,top,width,height)=field_controls::rect(w,h);
+        for (i,(sx,sy)) in field_controls::CENTERS.iter().copied().enumerate() {
+            let x=left+(sx-144.0)/966.0*width;
+            let y=top+(sy-116.0)/1022.0*height;
+            assert_eq!(field_controls::item_at(x,y,w,h),Some(i),"SEL slot {i}, {w}x{h}");
+            assert_eq!(field_controls::KEYS[i],[
+                input::Key::Alpha1,input::Key::Alpha2,input::Key::Alpha3,
+                input::Key::Alpha4,input::Key::Alpha5,input::Key::Alpha6,
+                input::Key::Alpha7,
+            ][i]);
+        }
+        assert_eq!(field_controls::item_at(0.0,0.0,w,h),None);
+    }
+    field_controls::close();
+    assert!(!field_controls::open());
+}
