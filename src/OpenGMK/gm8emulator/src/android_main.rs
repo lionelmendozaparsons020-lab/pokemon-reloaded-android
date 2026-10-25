@@ -1385,7 +1385,6 @@ extern "C" {
 fn reset_input_state() {
     if let Ok(mut value) = POINTER_CONTROLS.lock() { *value = None; }
     if let Ok(mut value) = WHEEL_PTR.lock() { *value = None; }
-    if let Ok(mut value) = FIELD_POINTER.lock() { *value = None; }
     if let Ok(mut value) = SWALLOWED_INPUTS.lock() { *value = None; }
     if let Ok(mut value) = MOUSE_DOWN_AT.lock() { value.clear(); }
     if let Ok(mut value) = DELAYED_UPS.lock() { value.clear(); }
