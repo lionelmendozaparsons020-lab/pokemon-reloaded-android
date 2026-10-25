@@ -31,8 +31,14 @@ fn polygon(x:f32,y:f32,p:&[(f32,f32)])->bool{
     for i in 0..p.len(){let(xi,yi)=p[i];let(xj,yj)=p[j];if (yi>y)!=(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi{inside=!inside;}j=i;}
     inside
 }
+/// A tap outside the visible selector closes it; transparent gaps inside it are inert.
+pub fn inside_wheel(x:f32,y:f32,ww:f32,wh:f32)->bool{
+    if ww<=0.||wh<=0.{return false}
+    let(l,t,w,h)=rect(ww,wh);
+    x>=l && x<=l+w && y>=t && y<=t+h
+}
 pub fn item_at(x:f32,y:f32,ww:f32,wh:f32)->Option<usize>{
-    if ww<=0.||wh<=0.{return None}
+    if !inside_wheel(x,y,ww,wh){return None}
     let(l,t,w,h)=rect(ww,wh);let sx=(x-l)/w*966.+144.;let sy=(y-t)/h*1022.+116.;
     let badges=[(627.,167.),(930.,316.),(930.,663.),(627.,812.),(326.,665.),(326.,316.),(627.,499.)];
     for(i,(bx,by))in badges.iter().enumerate(){if(sx-bx).abs()<37.&&(sy-by).abs()<37.{return Some(i)}}
