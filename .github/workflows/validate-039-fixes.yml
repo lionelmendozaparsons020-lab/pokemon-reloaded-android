@@ -1,7 +1,7 @@
-name: Private encrypted Controles 0.3.9 test build
+name: Private Controles 0.3.9 fast menu navigation
 on:
   push:
-    branches: [fix-039-sel-mochila-vibracion]
+    branches: [fix-039-menus-swipe-rapido]
   workflow_dispatch:
 permissions:
   contents: read
@@ -75,15 +75,15 @@ jobs:
             --verbose --print-certs "$RUNNER_TEMP/pokemon-reloaded-039-reparado.apk"
           cat > "$RUNNER_TEMP/recipient.pem" <<'PUBLIC_KEY'
           -----BEGIN PUBLIC KEY-----
-          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAoZGfwWxGjmgkFeFg3VOI
-          tdxnsZyFBGWIT9hVIG8+TaOUg6n4Z8RRjVXWjLR63BFTTjEuzI8umFTyM9Rn+WCm
-          2PX12H8MuCMMEKMWe5scLlIvGMczU1ZoelTzcV1PLiJU/1IQiFrYnEFaV73IpBvZ
-          IuSF394TsHp2jyd1cWxPocrvYUVFzjN/XZ+v2xCeVXgoLeDr/usaAp0u1fhjJXNR
-          TuOTLb8bQQyCg0DjhWRa8eKDVADDPNmg/8JMjP17ItGZ8rv6/vMcW8Fp3jT6kYkx
-          Sf5doVzM5CH7pNhuJxf3tMmmC+HbAKQSO3EOAJKUX5oMbBsEIiIkObawojNTTnQY
-          6t0qZsN7lOr/wMXkUWTdxpVnkQv4bWY6dOE2qOfIdpEOJijqmjjyTPa175EePxf4
-          y3+t2hN9C8btWkrcCgsN1dS0rfA4aHsFoab56z/VrUsl87cpdyjoqg1S+l4PUHiz
-          hckYm85wK8dXTj0OV5Kc5Ewbl1/EjtRib3ESg6i2h11hAgMBAAE=
+          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEArGSglfTzGBDkZ3dfGANK
+          qPlAzekfVMz6AluedZ//+XdAXocHTT4xgY0pm9dY4ovPggP0G9jGoJIDquW7H5e6
+          dBF6MQY4i3fIUmYxjlEiSI7pwSiFCi84xvC1ixZg4KIGCBpvwJRIEUyeVsqRmln2
+          T1avT87iaXhW763K+gxMMTSLaie+dQrW+aR3R8EueFUdjJ5NwaMdiYm28plRTwqz
+          V3ac/Zg667kV+vpX6pRRb/iy3Z3ujeL5WYN1LEyMm6ulzwZ6VwoBepPkrXaX2z7W
+          FhGN/ckTB47+waViz7fM+Z6Phby6hU5VJLld58biU3OlQ2gInLAGnSnYWuhpfvhc
+          OaF82L9gegb2sjakfO/1wHttJAqCAg9epbctnvgJKAD5KrwZbS8ECtco23YooBge
+          4gOQpELAQQPgbKgqPVvasz+K5OFgMR5IK9LW62hOkwtaED0nFzDlfMDKV2dfSawt
+          7EFVb/D69xTzP4GmaWJa2eJrPNr//9DSXfWWNFgSxkirAgMBAAE=
           -----END PUBLIC KEY-----
           PUBLIC_KEY
           mkdir -p encrypted-apk
