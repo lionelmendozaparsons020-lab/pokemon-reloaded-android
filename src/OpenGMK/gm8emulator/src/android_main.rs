@@ -417,6 +417,72 @@ fn flush_tapped_keys() {
     }
 }
 
+/// Menu swipes must not wait behind 55ms normal button taps or a game modal
+/// that has stopped redrawing. Give each arrow a short, independent DOWN/UP pulse.
+enum NavigationPhase {
+    Idle,
+    Held { key: Key, since: Instant, frame: u64 },
+    Gap { since: Instant, frame: u64 },
+}
+static NAVIGATION_PHASE: Mutex<NavigationPhase> = Mutex::new(NavigationPhase::Idle);
+const NAVIGATION_HOLD: Duration = Duration::from_millis(26);
+const NAVIGATION_GAP: Duration = Duration::from_millis(11);
+
+fn finish_navigation_key() {
+    let mut phase = NAVIGATION_PHASE.lock().unwrap();
+    if let NavigationPhase::Held { key, .. } = *phase {
+        if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
+            android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
+        }
+    }
+    *phase = NavigationPhase::Idle;
+}
+
+fn flush_navigation_scroll() {
+    if !crate::touch_navigation::active() {
+        finish_navigation_key();
+        return
+    }
+    let now = Instant::now();
+    let frame = crate::touch_navigation::frame();
+    let mut phase = NAVIGATION_PHASE.lock().unwrap();
+    let old = std::mem::replace(&mut *phase, NavigationPhase::Idle);
+    *phase = match old {
+        NavigationPhase::Held { key, since, frame: first } => {
+            let elapsed = now.saturating_duration_since(since);
+            // One reported game frame is ideal, but modal loops may not redraw.
+            // Bound that wait to keep touch navigation responsive anyway.
+            if elapsed >= NAVIGATION_HOLD &&
+                (frame != first || elapsed >= Duration::from_millis(46)) {
+                if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
+                    android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
+                }
+                NavigationPhase::Gap { since: now, frame }
+            } else {
+                NavigationPhase::Held { key, since, frame: first }
+            }
+        }
+        NavigationPhase::Gap { since, frame: first } => {
+            let elapsed = now.saturating_duration_since(since);
+            if elapsed >= NAVIGATION_GAP &&
+                (frame != first || elapsed >= Duration::from_millis(26)) {
+                NavigationPhase::Idle
+            } else {
+                NavigationPhase::Gap { since, frame: first }
+            }
+        }
+        NavigationPhase::Idle => NavigationPhase::Idle,
+    };
+    if matches!(*phase, NavigationPhase::Idle) {
+        while let Some(key) = crate::touch_navigation::next_key() {
+            if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { continue }
+            android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
+            *phase = NavigationPhase::Held { key, since: now, frame };
+            break
+        }
+    }
+}
+
 fn joystick_holds(key: Key) -> bool {
     let state=MOVEMENT_STATE.load(std::sync::atomic::Ordering::Relaxed);
     MOVEMENT_KEYS.iter().enumerate().any(|(i,k)| *k==key && state & (1<<i)!=0)
@@ -831,6 +897,7 @@ fn release_touch_profile() {
     crate::touch_controls::set_wheel_open(false);
     crate::field_controls::close();
     TAPS.lock().unwrap().queued.clear();
+    finish_navigation_key();
     if let Some(id)=crate::touch_navigation::cancel(){ids.insert(id);}
     if let Some((x,y))=crate::touch_navigation::cancel_pointer(){
         android::push_input(ramen::platform::android::InputEvent::PointerUp{x,y,button:0});
@@ -1594,7 +1661,7 @@ pub fn android_entry(app: AndroidApp) {
         }
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
-        if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
+        flush_navigation_scroll();
         flush_tapped_keys();
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
