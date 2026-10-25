@@ -1,5 +1,5 @@
 //! Recognize taps before generating a click; scrolling emits only directional keys.
-use std::{collections::VecDeque,sync::{Mutex,atomic::{AtomicU64,Ordering}},time::{Duration,Instant}};
+use std::{sync::{Mutex,atomic::{AtomicU64,Ordering}},time::{Duration,Instant}};
 use ramen::input::Key;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Identity{pub room:i32,pub modal:i32}
@@ -57,7 +57,14 @@ impl Gesture{
     }
 }
 static GESTURE:Mutex<Option<Gesture>>=Mutex::new(None);
-struct Pending{context:Identity,keys:VecDeque<Key>,last:Instant,confirm_frame:u64}
+struct Pending {
+    context: Identity,
+    // One signed displacement, not a queue of stale movements. Changing direction
+    // immediately replaces old up/down requests instead of replaying them later.
+    remaining: i32,
+}
+// Cap the backlog: old moves must not continue after the finger stops or reverses.
+const MAX_SCROLL_BACKLOG: i32 = 5;
 static PENDING:Mutex<Option<Pending>>=Mutex::new(None);
 pub fn owns(id:i32)->bool{GESTURE.lock().unwrap().as_ref().is_some_and(|g|g.id==id)}
 pub fn begin(id:i32,x:f32,y:f32,height:f32)->bool{
@@ -68,17 +75,28 @@ pub fn moved(id:i32,x:f32,y:f32)->bool{
     let mut guard=GESTURE.lock().unwrap();let Some(g)=guard.as_mut().filter(|g|g.id==id)else{return false};
     let steps=g.moved(x,y);
     if steps!=0{
-        let mut pending=PENDING.lock().unwrap();let p=pending.get_or_insert_with(||Pending{context:g.context,keys:VecDeque::new(),last:Instant::now()-Duration::from_millis(60),confirm_frame:0});
-        let key=if steps>0{Key::DownArrow}else{Key::UpArrow};
-        if p.keys.back().is_some_and(|k|*k!=key){p.keys.clear();}
-        for _ in 0..steps.abs(){if p.keys.len()<12{p.keys.push_back(key);}}
+        let mut pending=PENDING.lock().unwrap();
+        let p=pending.get_or_insert(Pending{context:g.context,remaining:0});
+        if p.context!=g.context { p.context=g.context; p.remaining=0; }
+        if p.remaining.signum()!=steps.signum(){p.remaining=0;}
+        p.remaining=(p.remaining+steps).clamp(-MAX_SCROLL_BACKLOG,MAX_SCROLL_BACKLOG);
     }true
 }
 /// Only a stationary release schedules a primary click, never a Z plus a click.
 pub fn end(id:i32,x:f32,y:f32)->Option<(f32,f32)>{
     let mut guard=GESTURE.lock().unwrap();if !guard.as_ref().is_some_and(|g|g.id==id){return None}
     let mut g=guard.take().unwrap();g.moved(x,y);
-    if g.dragged||g.context!=identity()||!active(){return None}
+    if g.dragged {
+        // Stop with the finger; complete at most one last key pulse,
+        // rather than scrolling through an obsolete queue for seconds.
+        let mut pending=PENDING.lock().unwrap();
+        if let Some(p)=pending.as_mut(){
+            p.remaining=p.remaining.clamp(-1,1);
+            if p.remaining==0 {*pending=None;}
+        }
+        return None
+    }
+    if g.context!=identity()||!active(){return None}
     *PENDING.lock().unwrap()=None;
     *TAP.lock().unwrap()=Some(Tap{context:g.context,x,y,pressed:false,due:Instant::now()+Duration::from_millis(45)});
     Some((x,y))
@@ -86,8 +104,11 @@ pub fn end(id:i32,x:f32,y:f32)->Option<(f32,f32)>{
 pub fn next_key()->Option<Key>{
     let mut guard=PENDING.lock().unwrap();let p=guard.as_mut()?;
     if p.context!=identity()||!active(){*guard=None;return None}
-    if p.last.elapsed()<Duration::from_millis(55)||FRAME.load(Ordering::Relaxed)<p.confirm_frame{return None}
-    p.last=Instant::now();let key=p.keys.pop_front();if p.keys.is_empty(){*guard=None;}key
+    let key=if p.remaining>0 {p.remaining-=1;Key::DownArrow}
+            else if p.remaining<0 {p.remaining+=1;Key::UpArrow}
+            else {*guard=None;return None};
+    if p.remaining==0 {*guard=None;}
+    Some(key)
 }
 pub fn cancel()->Option<i32>{*PENDING.lock().unwrap()=None;GESTURE.lock().unwrap().take().map(|g|g.id)}
 
