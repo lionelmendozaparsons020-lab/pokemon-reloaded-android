@@ -135,3 +135,56 @@ fn bag_modal_in_same_room_restores_navigation_then_exits_cleanly() {
     assert!(!touch_navigation::bag_open());
     assert_eq!(tc::current_context(),tc::WORLD);
 }
+
+
+#[test]
+fn fast_menu_swipe_does_not_replay_old_directions_after_reversal() {
+    use touch_controls as tc;
+    use input::Key;
+    tc::set_box_open(false);
+    tc::set_room(200);
+    tc::set_modal_id(-1);
+    touch_navigation::report(200, -1, true);
+    assert!(touch_navigation::active());
+    assert!(touch_navigation::begin(909, 120.0, 500.0, 720.0));
+
+    // A quick upward drag yields down-arrow steps, but never a huge backlog.
+    assert!(touch_navigation::moved(909, 120.0, 200.0));
+    assert_eq!(touch_navigation::next_key(), Some(Key::DownArrow));
+
+    // Immediately reverse without waiting 55 ms: the next key must be UP.
+    assert!(touch_navigation::moved(909, 120.0, 550.0));
+    assert_eq!(touch_navigation::next_key(), Some(Key::UpArrow));
+
+    // Releasing the finger is not a tap and leaves at most one trailing step.
+    assert_eq!(touch_navigation::end(909, 120.0, 550.0), None);
+    assert_eq!(touch_navigation::next_key(), Some(Key::UpArrow));
+    assert_eq!(touch_navigation::next_key(), None);
+    assert!(!touch_navigation::owns(909));
+
+    touch_navigation::report(100, -1, false);
+    tc::set_room(100);
+    assert!(!touch_navigation::active());
+}
+
+#[test]
+fn menu_swipe_pending_steps_are_discarded_when_modal_closes() {
+    use touch_controls as tc;
+    use input::Key;
+    tc::set_box_open(false);
+    tc::set_room(100);
+    tc::set_modal_id(7778);
+    touch_navigation::report(100, 7778, false);
+    assert!(touch_navigation::active());
+    assert!(touch_navigation::begin(910, 80.0, 430.0, 720.0));
+    assert!(touch_navigation::moved(910, 80.0, 200.0));
+    assert_eq!(touch_navigation::next_key(), Some(Key::DownArrow));
+
+    // A different modal / room cannot receive an older menu's arrows.
+    touch_navigation::report(100, 9673, false);
+    tc::set_modal_id(9673);
+    assert_eq!(touch_navigation::next_key(), None);
+    touch_navigation::cancel();
+    tc::set_modal_id(-1);
+    touch_navigation::report(100, -1, false);
+}
