@@ -10,6 +10,8 @@ static BAG_MODAL:Mutex<Option<i32>>=Mutex::new(None);
 static ARMED:Mutex<Option<(Identity,Instant)>>=Mutex::new(None);
 static FRAME:AtomicU64=AtomicU64::new(0);
 pub fn identity()->Identity{*IDENTITY.lock().unwrap()}
+/// Monotonic game report tick, used to keep synthetic key presses visible to the game.
+pub fn frame()->u64{FRAME.load(Ordering::Relaxed)}
 pub fn arm_bag(){*ARMED.lock().unwrap()=Some((identity(),Instant::now()));}
 pub fn disarm_bag(){*ARMED.lock().unwrap()=None;}
 pub fn report(room:i32,modal:i32,named_bag:bool){
