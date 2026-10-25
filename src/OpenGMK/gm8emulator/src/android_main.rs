@@ -372,7 +372,7 @@ static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
 enum TapPhase {
     Idle,
     Pressed { key: Key, started: Instant, frame: u64 },
-    Released { since: Instant, frame: u64 },
+    Released { key: Key, since: Instant, frame: u64 },
 }
 struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<Key> }
 static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
@@ -380,6 +380,15 @@ static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
 });
 const TAP_HOLD: Duration = Duration::from_millis(55);
 const TAP_GAP: Duration = Duration::from_millis(25);
+/// Menu swipes need separate DOWN/UP frames but should not wait the longer
+/// button-selection timings. This makes list movement track the finger closely.
+const SCROLL_HOLD: Duration = Duration::from_millis(12);
+const SCROLL_GAP: Duration = Duration::from_millis(8);
+fn is_scroll_key(key: Key) -> bool { matches!(key, Key::UpArrow | Key::DownArrow) }
+fn scroll_tap_ready() -> bool {
+    let taps=TAPS.lock().unwrap();
+    matches!(taps.phase,TapPhase::Idle) && taps.queued.is_empty()
+}
 
 fn tap_key(key: Key) {
     if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
@@ -393,17 +402,23 @@ fn flush_tapped_keys() {
     taps.phase = match phase {
         TapPhase::Pressed { key, started, frame: first_frame } => {
             let elapsed = started.elapsed();
-            if elapsed >= TAP_HOLD && (frame != first_frame || elapsed >= Duration::from_millis(170)) {
+            let scrolling=is_scroll_key(key);
+            let hold=if scrolling { SCROLL_HOLD } else { TAP_HOLD };
+            let max_wait=if scrolling { Duration::from_millis(90) } else { Duration::from_millis(170) };
+            if elapsed >= hold && (frame != first_frame || elapsed >= max_wait) {
                 if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
                     android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
                 }
-                TapPhase::Released { since: Instant::now(), frame }
+                TapPhase::Released { key, since: Instant::now(), frame }
             } else { TapPhase::Pressed { key, started, frame: first_frame } }
         }
-        TapPhase::Released { since, frame: release_frame } => {
-            if since.elapsed() >= TAP_GAP && (frame != release_frame || since.elapsed() >= Duration::from_millis(170)) {
+        TapPhase::Released { key, since, frame: release_frame } => {
+            let scrolling=is_scroll_key(key);
+            let gap=if scrolling { SCROLL_GAP } else { TAP_GAP };
+            let max_wait=if scrolling { Duration::from_millis(45) } else { Duration::from_millis(170) };
+            if since.elapsed() >= gap && (frame != release_frame || since.elapsed() >= max_wait) {
                 TapPhase::Idle
-            } else { TapPhase::Released { since, frame: release_frame } }
+            } else { TapPhase::Released { key, since, frame: release_frame } }
         }
         TapPhase::Idle => TapPhase::Idle,
     };
@@ -1594,8 +1609,15 @@ pub fn android_entry(app: AndroidApp) {
         }
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
-        if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
+        // First complete the previous pulse. Never stack new swipe steps behind
+        // a slow generic-key queue: enqueue one as soon as the next frame can see it.
         flush_tapped_keys();
+        if scroll_tap_ready() {
+            if let Some(key)=crate::touch_navigation::next_key() {
+                tap_key(key);
+                flush_tapped_keys();
+            }
+        }
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
             android::push_input(if down {InputEvent::PointerDown{x,y,button:0}} else {InputEvent::PointerUp{x,y,button:0}});
