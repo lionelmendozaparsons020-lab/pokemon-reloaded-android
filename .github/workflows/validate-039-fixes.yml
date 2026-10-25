@@ -106,3 +106,42 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           path: encrypted-apk/
+
+      - name: Sign Android APK with the existing private release key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/controles-release.jks"
+          APK=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
+          test -n "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/aligned.apk"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/controles-release.jks" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:STORE_PASS \
+            --key-pass env:KEY_PASS \
+            --out "$RUNNER_TEMP/pokemon-reloaded-controles-039-fixes.apk" \
+            "$RUNNER_TEMP/aligned.apk"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify \
+            --verbose --print-certs "$RUNNER_TEMP/pokemon-reloaded-controles-039-fixes.apk"
+      - name: Encrypt signed APK for private transfer
+        run: |
+          set -euo pipefail
+          mkdir -p secure-output
+          openssl cms -encrypt -binary -aes-256-cbc -outform DER \
+            -in "$RUNNER_TEMP/pokemon-reloaded-controles-039-fixes.apk" \
+            -out secure-output/pokemon-reloaded-039-fixes.apk.p7m \
+            verification/apk-transfer-cert.pem
+          test -s secure-output/pokemon-reloaded-039-fixes.apk.p7m
+      - name: Upload encrypted artifact only
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokemon-reloaded-039-fixes-encrypted
+          path: secure-output/pokemon-reloaded-039-fixes.apk.p7m
+          if-no-files-found: error
+          retention-days: 1
