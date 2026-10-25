@@ -368,12 +368,32 @@ static POINTER_CONTROLS: Mutex<Option<HashMap<i32, usize>>> = Mutex::new(None);
 static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
 static FIELD_POINTER: Mutex<Option<(i32,usize)>> = Mutex::new(None);
 
-/// Sends a key as a quick tap. The engine defers the release to the end of the poll, so the game
-/// still sees it as pressed.
+/// Synthetic key taps need a real held interval. The emulator's one-poll deferred
+/// release is too short for the game's slower item/field-menu loops on Android.
+static TAP_KEY_UPS: Mutex<Vec<(Instant, Key)>> = Mutex::new(Vec::new());
+const TAP_KEY_DURATION: Duration = Duration::from_millis(95);
 fn tap_key(key: ramen::input::Key) {
     if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
+    let mut pending = TAP_KEY_UPS.lock().unwrap();
+    // Never strand an already-pressed key if the player taps the same slot again.
+    if let Some(existing) = pending.iter_mut().find(|(_, held)| *held == key) {
+        existing.0 = Instant::now() + TAP_KEY_DURATION;
+        return;
+    }
     android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
-    android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
+    pending.push((Instant::now() + TAP_KEY_DURATION, key));
+}
+fn flush_tapped_keys() {
+    let now = Instant::now();
+    let mut pending = TAP_KEY_UPS.lock().unwrap();
+    pending.retain(|(until, key)| {
+        if *until > now { return true }
+        // Don't release a key that became held by a physical touch in the meantime.
+        if !crate::touch_controls::key_held_by_buttons(*key) && !joystick_holds(*key) {
+            android::push_input(ramen::platform::android::InputEvent::KeyUp { key: *key });
+        }
+        false
+    });
 }
 
 fn joystick_holds(key: Key) -> bool {
@@ -482,7 +502,13 @@ fn pointer_down(id: i32, x: f32, y: f32) {
         SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
     }
     if crate::field_controls::open(){
-        if let Some(slot)=crate::field_controls::item_at(x,y,wf,hf){let mut owner=FIELD_POINTER.lock().unwrap();if owner.is_none(){*owner=Some((id,slot));touch_feedback();}}
+        if let Some(slot)=crate::field_controls::item_at(x,y,wf,hf){
+            let mut owner=FIELD_POINTER.lock().unwrap();
+            if owner.is_none(){*owner=Some((id,slot));touch_feedback();}
+        } else if !crate::field_controls::inside_wheel(x,y,wf,hf) {
+            // An outside tap closes the latched selector without pressing the game.
+            crate::field_controls::close();
+        }
         SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
     }
     if hit.is_none()&&crate::touch_navigation::active(){
@@ -530,7 +556,20 @@ fn pointer_up(id: i32, x: f32, y: f32) {
         if let Some((x,y))=crate::touch_navigation::end(id,x,y){android::push_input(ramen::platform::android::InputEvent::PointerMoved{x,y});}return
     }
     let selected={let mut owner=FIELD_POINTER.lock().unwrap();if owner.is_some_and(|(pointer,_)|pointer==id){owner.take().map(|(_,slot)|slot)}else{None}};
-    if let Some(slot)=selected{let(w,h)=android::window_size();if crate::field_controls::open()&&crate::field_controls::item_at(x,y,w as f32,h as f32)==Some(slot){tap_key(crate::field_controls::KEYS[slot]);crate::field_controls::close();}}
+    if let Some(slot)=selected {
+        let(w,h)=android::window_size();
+        if crate::field_controls::open() {
+            // Preserve the initial hexagon for slight finger drift into its artwork's
+            // transparent gaps; allow deliberate slides to another hexagon.
+            if crate::field_controls::inside_wheel(x,y,w as f32,h as f32) {
+                let picked=crate::field_controls::item_at(x,y,w as f32,h as f32).unwrap_or(slot);
+                tap_key(crate::field_controls::KEYS[picked]);
+            }
+            crate::field_controls::close();
+        }
+        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).remove(&id);
+        return
+    }
 
     let closes_wheel = {
         let mut owner = WHEEL_PTR.lock().unwrap();
@@ -695,7 +734,9 @@ fn is_movement_pointer(id: i32) -> bool {
 
 /// Presses/releases the arrow keys so they match where the movement control is being pushed.
 fn movement_update(x: f32, y: f32) {
-    crate::touch_navigation::disarm_bag();
+    // The stick is also used to navigate an already-open bag.
+    // Don't revoke the bag transition while the player scrolls its item list.
+    if !crate::touch_navigation::bag_open(){crate::touch_navigation::disarm_bag();}
     use std::sync::atomic::Ordering;
     let (w, h) = android::window_size();
     let (wf, hf) = (w as f32, h as f32);
@@ -1544,6 +1585,7 @@ pub fn android_entry(app: AndroidApp) {
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
         if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
+        flush_tapped_keys();
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
             android::push_input(if down {InputEvent::PointerDown{x,y,button:0}} else {InputEvent::PointerUp{x,y,button:0}});
