@@ -23,6 +23,7 @@ object Emulator {
         prefs.writeTouchAppearance(context.filesDir)
         prefs.writeGameLanguage(context.filesDir)
         TouchSprites.writeRuntime(context, prefs.touchSprites)
+        if (prefs.touchAppearance.style == TouchStyle.MODERN_V2) ModernoV2Sprites.prepare(context)
         TouchLabels.writeRuntime(context, context.filesDir)
         context.startActivity(Intent().setClassName(context.packageName, GAME_ACTIVITY))
     }
