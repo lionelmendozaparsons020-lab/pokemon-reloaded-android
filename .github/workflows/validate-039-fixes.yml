@@ -1,0 +1,52 @@
+name: Validate SEL bag haptics without publishing an APK
+on:
+  push:
+    branches: [fix-039-sel-mochila-vibracion]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+          cache-read-only: false
+      - name: Install Android build tools
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/OpenGMK/target
+          key: controles-arm64-rust199-ndk27-16k-${{ hashFiles('src/OpenGMK/Cargo.lock', 'src/OpenGMK/gm8emulator/src/**/*.rs', 'vendor/**/*.rs') }}
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup target add --toolchain 1.99.0 aarch64-linux-android
+          cargo +1.99.0 install cargo-ndk --version 3.5.4 --locked
+      - name: Test touch input and PC gestures
+        run: |
+          rustc +1.99.0 --edition=2021 --test verification/touch_tests.rs -o /tmp/touch-tests
+          /tmp/touch-tests --test-threads=1
+          rustc +1.99.0 --edition=2021 --test src/OpenGMK/gm8emulator/src/touch_stick.rs -o /tmp/stick-tests
+          /tmp/stick-tests --test-threads=1
+      - name: Compile ARM64 engine
+        working-directory: src/OpenGMK
+        run: cargo +1.99.0 ndk -t arm64-v8a --platform 29 build -p gm8emulator --lib --release --locked
+      - name: Test Android and compile APK without publishing it
+        working-directory: android
+        run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease -Pandroid.onlyEnableUnitTestForTheTestedBuildType=false -PcontrolsBuild=true -PtargetAbi=arm64-v8a
