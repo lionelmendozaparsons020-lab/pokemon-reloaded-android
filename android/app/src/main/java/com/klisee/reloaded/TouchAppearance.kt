@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import java.util.Locale
 
 enum class TouchStyle(val id: String, val title: String) {
-    MODERN("modern", "Moderno"), CLASSIC("classic", "Clasico"),
+    MODERN("modern", "Moderno"), MODERN_V2("modern_v2", "Moderno V2"), CLASSIC("classic", "Clasico"),
 }
 enum class TouchStrength(val title: String, val scale: Float) { SOFT("Suave", .5f), MEDIUM("Media", .7f), STRONG("Fuerte", 1f) }
 data class TouchAppearance(
@@ -23,7 +23,11 @@ data class TouchAppearance(
             if (text.length > 4096 || text.lineSequence().firstOrNull() != "touch-appearance-v1") return TouchAppearance()
             val fields = text.lineSequence().drop(1).mapNotNull { line -> line.split('=', limit=2).takeIf { it.size==2 }?.let { it[0].trim() to it[1].trim() } }.toMap()
             return TouchAppearance(
-                style = if (fields["style"] in setOf("classic", "minimal", "pixel")) TouchStyle.CLASSIC else TouchStyle.MODERN,
+                style = when (fields["style"]) {
+                    "classic", "minimal", "pixel" -> TouchStyle.CLASSIC
+                    "modern_v2" -> TouchStyle.MODERN_V2
+                    else -> TouchStyle.MODERN
+                },
                 colorHex = fields["tint"]?.takeIf { it.matches(Regex("[a-fA-F0-9]{6}")) }?.uppercase(Locale.ROOT) ?: "original",
                 animations = fields["animations"] != "0", haptics = fields["haptics"] != "0",
                 strength = TouchStrength.entries.firstOrNull { it.name == fields["strength"] } ?: TouchStrength.SOFT,
