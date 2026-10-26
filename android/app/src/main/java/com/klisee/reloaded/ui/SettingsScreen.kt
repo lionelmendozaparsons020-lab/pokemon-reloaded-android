@@ -75,6 +75,7 @@ fun SettingsScreen(
     onTouchSettings: () -> Unit,
     onFpsSettings: () -> Unit,
     onMySaves: () -> Unit,
+    onMods: () -> Unit,
     onUpdateFound: (Update.Release) -> Unit,
     bottomBar: @Composable () -> Unit = {},
 ) {
@@ -214,6 +215,17 @@ fun SettingsScreen(
                     index = 0,
                     enabled = installed != null,
                     onClick = onMySaves,
+                )
+            }
+
+            SettingsGroup("Mods y Cheats") {
+                NavRow(
+                    icon = Icons.Filled.SettingsBackupRestore,
+                    title = "Mods y Cheats",
+                    subtitle = "Trucos oficiales F3 y respaldos de partidas",
+                    items = 1,
+                    index = 0,
+                    onClick = onMods,
                 )
             }
 

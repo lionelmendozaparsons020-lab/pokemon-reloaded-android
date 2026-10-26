@@ -43,7 +43,7 @@ import com.klisee.reloaded.installUpdate
 import kotlinx.coroutines.launch
 
 /** Screens reached from a tab rather than being tabs themselves. */
-private enum class Pushed { About, Controls, Discord, TouchSettings, Fps, TouchLayout, MySaves }
+private enum class Pushed { About, Controls, Discord, TouchSettings, Fps, TouchLayout, MySaves, Mods }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -170,6 +170,7 @@ fun App(repo: GameRepository, prefs: Preferences) {
         pushed == Pushed.TouchSettings || pushed == Pushed.TouchLayout ->
             if (english) "Customizing the Controls" else "Personalizando los Controles"
         pushed == Pushed.MySaves -> if (english) "Viewing the Saves" else "Viendo las Partidas"
+        pushed == Pushed.Mods -> if (english) "Viewing Mods and Cheats" else "Viendo Mods y Cheats"
         tab == Tab.Log -> if (english) "In Logs" else "En los Logs"
         tab == Tab.Settings -> if (english) "In Settings" else "En los Ajustes"
         else -> if (english) "Ready to start" else "Listo para iniciar"
@@ -201,6 +202,7 @@ fun App(repo: GameRepository, prefs: Preferences) {
         Pushed.Fps -> FpsScreen(prefs = prefs, onBack = { pushed = null })
         Pushed.TouchLayout -> TouchLayoutScreen(prefs = prefs, onBack = { pushed = null })
         Pushed.MySaves -> MySavesScreen(repo = repo, onBack = { pushed = null })
+        Pushed.Mods -> ModsCheatsScreen(repo = repo, onBack = { pushed = null })
         null -> Box(modifier = Modifier.fillMaxSize()) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 when (Tab.entries[page]) {
@@ -231,6 +233,7 @@ fun App(repo: GameRepository, prefs: Preferences) {
                         onTouchSettings = { pushed = Pushed.TouchSettings },
                         onFpsSettings = { pushed = Pushed.Fps },
                         onMySaves = { pushed = Pushed.MySaves },
+                        onMods = { pushed = Pushed.Mods },
                         onUpdateFound = { update = it },
                     )
                 }
