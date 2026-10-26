@@ -18,7 +18,8 @@ val keystoreProperties = Properties().apply {
 //   ./build.sh assembleRelease -PtargetAbi=x86_64
 //   ./build.sh assembleRelease -PtargetAbi=universal
 // after building the same ABIs with cargo-ndk (the error below prints the exact commands).
-val appVersion = "0.3.9"
+val controlsBuild = providers.gradleProperty("controlsBuild").orNull == "true"
+val appVersion = if (controlsBuild) "0.3.9-controles" else "0.3.9"
 val allAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 val rustTargetOf = mapOf(
     "arm64-v8a" to "aarch64-linux-android",
@@ -52,14 +53,16 @@ val copyEmulatorSo by tasks.registering {
 android {
     namespace = "com.klisee.reloaded"
     compileSdk = 37
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "com.klisee.reloaded"
+        applicationId = if (controlsBuild) "com.klisee.reloaded.controles" else "com.klisee.reloaded"
         // AAudio exists since Android 8 (API 26), which is the real floor of the engine.
-        minSdk = 26
+        minSdk = if (controlsBuild) 29 else 26
         targetSdk = 36
-        versionCode = 16
+        versionCode = if (controlsBuild) 20 else 16
         versionName = appVersion
+        manifestPlaceholders["launcherLabel"] = if (controlsBuild) "Pokemon Reloaded Controles" else "@string/app_name"
         ndk { abiFilters += buildAbis }
     }
 
@@ -82,7 +85,7 @@ android {
             signingConfig = if (!keystoreProperties.isEmpty) {
                 signingConfigs.getByName("release")
             } else {
-                signingConfigs.getByName("debug")
+                null // Do not sign official release builds with a debug key.
             }
         }
     }
@@ -111,6 +114,7 @@ androidComponents {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")

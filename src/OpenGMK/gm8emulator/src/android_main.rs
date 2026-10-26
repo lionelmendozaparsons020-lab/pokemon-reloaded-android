@@ -366,14 +366,78 @@ static POINTER_CONTROLS: Mutex<Option<HashMap<i32, usize>>> = Mutex::new(None);
 
 /// The pointer the party wheel is following, if any.
 static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
-static FIELD_POINTER: Mutex<Option<(i32,usize)>> = Mutex::new(None);
 
-/// Sends a key as a quick tap. The engine defers the release to the end of the poll, so the game
-/// still sees it as pressed.
-fn tap_key(key: ramen::input::Key) {
+/// Android key events may arrive between game frames; a tap must survive the next sample.
+/// Repeated bag arrows require DOWN and UP in separate frames, not one held key forever.
+/// Keep reliable, frame-visible taps for SEL and other buttons; finger-scrolling
+/// uses shorter, separately paced arrow taps so the selection tracks the finger.
+#[derive(Clone, Copy)]
+struct QueuedTap { key: Key, navigation: bool }
+enum TapPhase {
+    Idle,
+    Pressed { key: Key, started: Instant, frame: u64, navigation: bool },
+    Released { since: Instant, frame: u64, navigation: bool },
+}
+struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<QueuedTap> }
+static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
+    phase: TapPhase::Idle, queued: std::collections::VecDeque::new(),
+});
+const TAP_HOLD: Duration = Duration::from_millis(55);
+const TAP_GAP: Duration = Duration::from_millis(25);
+const SCROLL_HOLD: Duration = Duration::from_millis(22);
+const SCROLL_GAP: Duration = Duration::from_millis(8);
+const SCROLL_FRAME_FALLBACK: Duration = Duration::from_millis(70);
+
+fn tap_key(key: Key) {
     if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
-    android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
-    android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
+    let mut taps = TAPS.lock().unwrap();
+    if taps.queued.len() < 32 { taps.queued.push_back(QueuedTap { key, navigation: false }); }
+}
+/// At most one pending finger-scroll key; don't accumulate a second delayed queue
+/// behind touch_navigation's own bounded displacement queue.
+fn scroll_tap_capacity() -> bool { TAPS.lock().unwrap().queued.is_empty() }
+fn tap_scroll_key(key: Key) {
+    if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
+    let mut taps = TAPS.lock().unwrap();
+    if taps.queued.is_empty() { taps.queued.push_back(QueuedTap { key, navigation: true }); }
+}
+fn flush_tapped_keys() {
+    let mut taps = TAPS.lock().unwrap();
+    let frame = crate::touch_navigation::frame();
+    let nav_active = crate::touch_navigation::active();
+    if !nav_active { taps.queued.retain(|tap| !tap.navigation); }
+    let phase = std::mem::replace(&mut taps.phase, TapPhase::Idle);
+    taps.phase = match phase {
+        TapPhase::Pressed { key, started, frame: first_frame, navigation } => {
+            let elapsed = started.elapsed();
+            let hold = if navigation { SCROLL_HOLD } else { TAP_HOLD };
+            let fallback = if navigation { SCROLL_FRAME_FALLBACK } else { Duration::from_millis(170) };
+            if !nav_active && navigation ||
+                (elapsed >= hold && (frame != first_frame || elapsed >= fallback)) {
+                if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
+                    android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
+                }
+                TapPhase::Released { since: Instant::now(), frame, navigation }
+            } else { TapPhase::Pressed { key, started, frame: first_frame, navigation } }
+        }
+        TapPhase::Released { since, frame: release_frame, navigation } => {
+            let gap = if navigation { SCROLL_GAP } else { TAP_GAP };
+            let fallback = if navigation { SCROLL_FRAME_FALLBACK } else { Duration::from_millis(170) };
+            if (!nav_active && navigation) ||
+                (since.elapsed() >= gap && (frame != release_frame || since.elapsed() >= fallback)) {
+                TapPhase::Idle
+            } else { TapPhase::Released { since, frame: release_frame, navigation } }
+        }
+        TapPhase::Idle => TapPhase::Idle,
+    };
+    if matches!(taps.phase, TapPhase::Idle) {
+        while let Some(tap) = taps.queued.pop_front() {
+            if crate::touch_controls::key_held_by_buttons(tap.key) || joystick_holds(tap.key) { continue }
+            android::push_input(ramen::platform::android::InputEvent::KeyDown { key: tap.key, text: None });
+            taps.phase = TapPhase::Pressed { key: tap.key, started: Instant::now(), frame, navigation: tap.navigation };
+            break
+        }
+    }
 }
 
 fn joystick_holds(key: Key) -> bool {
@@ -422,6 +486,28 @@ fn touch_feedback() {
     });
 }
 
+// Only the PC box uses a long press; menus, text entry and info overlays keep their input.
+static BOX_TOUCH: Mutex<crate::box_touch::BoxTouch> = Mutex::new(crate::box_touch::BoxTouch::new());
+
+fn box_touch_active() -> bool {
+    use crate::touch_controls as tc;
+    tc::box_open() && tc::current_context() == tc::MENU
+        && !tc::info_window_open() && !tc::text_entry_open()
+        && !matches!(tc::modal_id(), 9673 | 9674 | 7778)
+}
+
+fn emit_box_events(events: Vec<crate::box_touch::Event>) {
+    use crate::box_touch::{Event, Point};
+    use ramen::platform::android::InputEvent;
+    for event in events {
+        android::push_input(match event {
+            Event::Move(Point(x, y)) => InputEvent::PointerMoved { x, y },
+            Event::Down(Point(x, y), button) => InputEvent::PointerDown { x, y, button },
+            Event::Up(Point(x, y), button) => InputEvent::PointerUp { x, y, button },
+        });
+    }
+}
+
 fn pointer_down(id: i32, x: f32, y: f32) {
     // A new gesture cannot inherit a swallowed Up from an Android cancellation.
     if let Some(ids)=SWALLOWED_INPUTS.lock().unwrap().as_mut(){ids.remove(&id);}
@@ -434,9 +520,31 @@ fn pointer_down(id: i32, x: f32, y: f32) {
         SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
         return
     }
+    if box_touch_active() {
+        if BOX_TOUCH.lock().unwrap().begin(id, crate::box_touch::Point(x, y), hf, Instant::now(), crate::touch_controls::box_carrying()) {
+            android::push_input(ramen::platform::android::InputEvent::PointerMoved { x, y });
+        } else {
+            SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+        }
+        return
+    }
     let on_movement = wf > 0.0 && hf > 0.0 && crate::touch_controls::movement_hit(x / wf, y / hf, wf, hf);
-    // Any *other* touch while the party wheel is up cancels it - but not the movement stick: while
-    // walking the player keeps touching and lifting it, and that must not close the wheel.
+    let hit = if wf > 0.0 && hf > 0.0 { crate::touch_controls::hit(x / wf, y / hf, wf, hf) } else { None };
+    // SEL takes precedence over the joystick and any ordinary buttons behind its artwork.
+    // Select on DOWN so canceled UPs and small finger drifts cannot drop a number press.
+    if crate::field_controls::open() {
+        if hit.is_some_and(|i| crate::touch_controls::controls()[i].name == crate::field_controls::NAME) {
+            crate::field_controls::close();
+        } else if let Some(slot) = crate::field_controls::item_at(x, y, wf, hf) {
+            tap_key(crate::field_controls::KEYS[slot]);
+            crate::field_controls::close();
+            touch_feedback();
+        } else if !crate::field_controls::inside_wheel(x, y, wf, hf) {
+            crate::field_controls::close();
+        }
+        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+        return
+    }
     if crate::touch_controls::wheel_open() && *WHEEL_PTR.lock().unwrap() != Some(id) && !on_movement {
         crate::touch_controls::set_wheel_open(false);
         WHEEL_PTR.lock().unwrap().take();
@@ -446,14 +554,11 @@ fn pointer_down(id: i32, x: f32, y: f32) {
         movement_update(x, y);
         return
     }
-    let hit = if w > 0 && h > 0 { crate::touch_controls::hit(x / wf, y / hf, wf, hf) } else { None };
-    if hit.is_some_and(|i|crate::touch_controls::controls()[i].name==crate::field_controls::NAME){
-        crate::field_controls::toggle();touch_feedback();
-        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
-    }
-    if crate::field_controls::open(){
-        if let Some(slot)=crate::field_controls::item_at(x,y,wf,hf){let mut owner=FIELD_POINTER.lock().unwrap();if owner.is_none(){*owner=Some((id,slot));touch_feedback();}}
-        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);return
+    if hit.is_some_and(|i| crate::touch_controls::controls()[i].name == crate::field_controls::NAME) {
+        crate::field_controls::toggle();
+        touch_feedback();
+        SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);
+        return
     }
     if hit.is_none()&&crate::touch_navigation::active(){
         if !crate::touch_navigation::begin(id,x,y,hf){SWALLOWED_INPUTS.lock().unwrap().get_or_insert_with(std::collections::HashSet::new).insert(id);}return
@@ -495,12 +600,10 @@ fn pointer_down(id: i32, x: f32, y: f32) {
 }
 
 fn pointer_up(id: i32, x: f32, y: f32) {
+    if BOX_TOUCH.lock().unwrap().end(id, crate::box_touch::Point(x, y), Instant::now()) { return }
     if crate::touch_navigation::owns(id){
         if let Some((x,y))=crate::touch_navigation::end(id,x,y){android::push_input(ramen::platform::android::InputEvent::PointerMoved{x,y});}return
     }
-    let selected={let mut owner=FIELD_POINTER.lock().unwrap();if owner.is_some_and(|(pointer,_)|pointer==id){owner.take().map(|(_,slot)|slot)}else{None}};
-    if let Some(slot)=selected{let(w,h)=android::window_size();if crate::field_controls::open()&&crate::field_controls::item_at(x,y,w as f32,h as f32)==Some(slot){tap_key(crate::field_controls::KEYS[slot]);crate::field_controls::close();}}
-
     let closes_wheel = {
         let mut owner = WHEEL_PTR.lock().unwrap();
         if *owner == Some(id) { *owner = None; true } else { false }
@@ -543,6 +646,7 @@ const MIN_TAP: Duration = Duration::from_millis(70);
 /// was selected before. Delivering the move a hair earlier gives the game that frame.
 const HOVER_DELAY: Duration = Duration::from_millis(45);
 
+static MOUSE_PRIMARY_HELD: Mutex<Option<(f32, f32)>> = Mutex::new(None);
 static MOUSE_DOWN_AT: Mutex<Vec<(i32, Instant)>> = Mutex::new(Vec::new());
 static DELAYED_UPS: Mutex<Vec<(Instant, f32, f32)>> = Mutex::new(Vec::new());
 static DELAYED_DOWNS: Mutex<Vec<(Instant, f32, f32)>> = Mutex::new(Vec::new());
@@ -575,6 +679,7 @@ fn mouse_up(id: i32, x: f32, y: f32) {
     if deadline > Instant::now() {
         DELAYED_UPS.lock().unwrap().push((deadline, x, y));
     } else {
+        MOUSE_PRIMARY_HELD.lock().unwrap().take();
         android::push_input(ramen::platform::android::InputEvent::PointerUp { x, y, button: 0 });
     }
 }
@@ -624,6 +729,7 @@ fn flush_delayed_mouse() {
         }
     });
     for (x, y) in downs {
+        *MOUSE_PRIMARY_HELD.lock().unwrap() = Some((x, y));
         android::push_input(ramen::platform::android::InputEvent::PointerDown { x, y, button: 0 });
     }
 
@@ -637,6 +743,7 @@ fn flush_delayed_mouse() {
         }
     });
     for (x, y) in ups {
+        MOUSE_PRIMARY_HELD.lock().unwrap().take();
         android::push_input(ramen::platform::android::InputEvent::PointerUp { x, y, button: 0 });
     }
 }
@@ -660,7 +767,9 @@ fn is_movement_pointer(id: i32) -> bool {
 
 /// Presses/releases the arrow keys so they match where the movement control is being pushed.
 fn movement_update(x: f32, y: f32) {
-    crate::touch_navigation::disarm_bag();
+    // The stick is also used to navigate an already-open bag.
+    // Don't revoke the bag transition while the player scrolls its item list.
+    if !crate::touch_navigation::bag_open(){crate::touch_navigation::disarm_bag();}
     use std::sync::atomic::Ordering;
     let (w, h) = android::window_size();
     let (wf, hf) = (w as f32, h as f32);
@@ -722,9 +831,19 @@ fn movement_release() {
 }
 
 fn release_touch_profile() {
+    let (box_id, box_events) = BOX_TOUCH.lock().unwrap().cancel();
+    emit_box_events(box_events);
     let held = POINTER_CONTROLS.lock().unwrap().take().unwrap_or_default();
     let mut swallowed = SWALLOWED_INPUTS.lock().unwrap();
     let ids = swallowed.get_or_insert_with(std::collections::HashSet::new);
+    if let Some(id) = box_id { ids.insert(id); }
+    // No delayed click from the old screen may leak into the newly opened box/menu.
+    DELAYED_DOWNS.lock().unwrap().clear();
+    DELAYED_UPS.lock().unwrap().clear();
+    for (id, _) in MOUSE_DOWN_AT.lock().unwrap().drain(..) { ids.insert(id); }
+    if let Some((x, y)) = MOUSE_PRIMARY_HELD.lock().unwrap().take() {
+        android::push_input(ramen::platform::android::InputEvent::PointerUp { x, y, button: 0 });
+    }
     for (id, index) in held {
         control_key_up(index);
         ids.insert(id);
@@ -734,7 +853,7 @@ fn release_touch_profile() {
     if let Some(id) = WHEEL_PTR.lock().unwrap().take() { ids.insert(id); }
     crate::touch_controls::set_wheel_open(false);
     crate::field_controls::close();
-    if let Some((id,_))=FIELD_POINTER.lock().unwrap().take(){ids.insert(id);}
+    TAPS.lock().unwrap().queued.clear();
     if let Some(id)=crate::touch_navigation::cancel(){ids.insert(id);}
     if let Some((x,y))=crate::touch_navigation::cancel_pointer(){
         android::push_input(ramen::platform::android::InputEvent::PointerUp{x,y,button:0});
@@ -816,6 +935,7 @@ fn translate(event: &InputEvent) {
                     let wheel_ptr = *WHEEL_PTR.lock().unwrap();
                     for p in motion.pointers() {
                         if SWALLOWED_INPUTS.lock().unwrap().as_ref().is_some_and(|ids|ids.contains(&p.pointer_id())){continue}
+                        if BOX_TOUCH.lock().unwrap().moved(p.pointer_id(), crate::box_touch::Point(p.x(), p.y()), Instant::now()) { continue }
                         if crate::touch_navigation::moved(p.pointer_id(),p.x(),p.y()){continue}
                         if wheel_ptr == Some(p.pointer_id()) {
                             let (w, h) = android::window_size();
@@ -1303,7 +1423,7 @@ extern "C" {
 fn reset_input_state() {
     if let Ok(mut value) = POINTER_CONTROLS.lock() { *value = None; }
     if let Ok(mut value) = WHEEL_PTR.lock() { *value = None; }
-    if let Ok(mut value) = FIELD_POINTER.lock() { *value = None; }
+    if let Ok(mut value) = TAPS.lock() { value.queued.clear(); value.phase = TapPhase::Idle; }
     if let Ok(mut value) = SWALLOWED_INPUTS.lock() { *value = None; }
     if let Ok(mut value) = MOUSE_DOWN_AT.lock() { value.clear(); }
     if let Ok(mut value) = DELAYED_UPS.lock() { value.clear(); }
@@ -1479,6 +1599,7 @@ pub fn android_entry(app: AndroidApp) {
     let mut destroying = false;
     let mut input_context = crate::touch_controls::current_context();
     let mut input_identity=crate::touch_navigation::identity();
+    let mut input_box_active = box_touch_active();
     let mut ime_check = Instant::now();
     let mut text_entry_was_open = false;
     loop {
@@ -1487,8 +1608,19 @@ pub fn android_entry(app: AndroidApp) {
         }
         let context = crate::touch_controls::current_context();
         let identity=crate::touch_navigation::identity();
-        if context!=input_context || identity!=input_identity {release_touch_profile();input_context=context;input_identity=identity;}
-        if let Some(key)=crate::touch_navigation::next_key(){tap_key(key);}
+        let box_active = box_touch_active();
+        if context != input_context || identity != input_identity || box_active != input_box_active {
+            release_touch_profile();
+            input_context = context;
+            input_identity = identity;
+            input_box_active = box_active;
+        }
+        let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
+        emit_box_events(box_events);
+        if scroll_tap_capacity() {
+            if let Some(key)=crate::touch_navigation::next_key(){tap_scroll_key(key);}
+        }
+        flush_tapped_keys();
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
             android::push_input(if down {InputEvent::PointerDown{x,y,button:0}} else {InputEvent::PointerUp{x,y,button:0}});
@@ -1560,10 +1692,12 @@ pub fn android_entry(app: AndroidApp) {
                 android_activity::MainEvent::TerminateWindow { .. }
                 | android_activity::MainEvent::Pause { .. }
                 | android_activity::MainEvent::Stop => {
+                    release_touch_profile();
                     ramen::platform::android::set_paused(true);
                     crate::game::audio::set_output_paused(true);
                     unsafe { crate::render::opengl::egl::detach_surface() };
                 },
+                android_activity::MainEvent::LostFocus => { release_touch_profile(); },
                 android_activity::MainEvent::InputAvailable => {
                     if let Ok(mut iter) = game_app.input_events_iter() {
                         loop {

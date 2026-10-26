@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required for direct vibration effects on touch controls. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Installing a downloaded update; Android asks the user to allow it the first time. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Mantiene el Rich Presence vivo mientras el juego corre. -->
@@ -9,7 +11,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
-        android:label="@string/app_name"
+        android:label="${launcherLabel}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Reloaded"

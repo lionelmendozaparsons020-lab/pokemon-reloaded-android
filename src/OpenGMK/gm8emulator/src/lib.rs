@@ -30,6 +30,8 @@ pub mod touch_appearance;
 pub mod touch_skin;
 pub mod field_controls;
 pub mod touch_navigation;
+pub mod box_touch;
+pub mod touch_stick;
 
 mod main_impl;
 

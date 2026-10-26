@@ -296,7 +296,7 @@ private fun ControlPreview(
                 }
             }
             if(spec.joystick) {
-                if (appearance.style == TouchStyle.MODERN && images["joystick-base.png"] != null) {
+                if (appearance.style != TouchStyle.CLASSIC && images["joystick-base.png"] != null) {
                     sprite("joystick-base.png",g.radius*1.05f);sprite("joystick-knob.png",g.radius*.88f)
                 } else drawModernMovement(g, alpha, paint, tint = appearance.tint)
             }
