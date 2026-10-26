@@ -2,6 +2,8 @@ package com.klisee.reloaded.ui
 
 import android.graphics.BitmapFactory
 import android.graphics.Paint
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -44,6 +46,21 @@ fun TouchAppearanceScreen(prefs: Preferences, onBack: () -> Unit) {
     val feedback = remember { TouchFeedback(context) }
     var appearance by remember(touchResumeRevision()) { mutableStateOf(prefs.touchAppearance) }
     var customHex by rememberSaveable { mutableStateOf(appearance.colorHex.takeUnless { it=="original" }.orEmpty()) }
+    var v2Revision by remember { mutableIntStateOf(0) }
+    var packMessage by remember { mutableStateOf("") }
+    val packPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { ModernoV2Sprites.importPack(context, uri) }
+                .onSuccess { count ->
+                    val next = appearance.copy(style=TouchStyle.MODERN_V2, colorHex="original")
+                    appearance=next
+                    prefs.touchAppearance=next
+                    v2Revision++
+                    packMessage="Se importaron $count sprites en Moderno V2. Reiniciá el juego para verlos."
+                }
+                .onFailure { packMessage="Error importando paquete: ${it.message}" }
+        }
+    }
     fun update(next: TouchAppearance) { appearance = next; prefs.touchAppearance = next }
     Scaffold(topBar = { TopAppBar(title = { Text("Apariencia de controles") }, navigationIcon = {
         TextButton(onClick = onBack) { Text("Volver") }
@@ -52,7 +69,7 @@ fun TouchAppearanceScreen(prefs: Preferences, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Se guarda automáticamente y se aplica al iniciar el juego. La opacidad se mantiene en Ajustes.",
                 style=MaterialTheme.typography.bodyMedium, color=MaterialTheme.colorScheme.onSurfaceVariant)
-            AppearanceSample(appearance, prefs.touchOpacityPercent / 100f, feedback)
+            AppearanceSample(appearance, prefs.touchOpacityPercent / 100f, feedback, v2Revision)
             Text("Tocá un botón para probar su respuesta.", style=MaterialTheme.typography.bodySmall)
             Text("Estilo gráfico",style=MaterialTheme.typography.titleMedium)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -64,6 +81,16 @@ fun TouchAppearanceScreen(prefs: Preferences, onBack: () -> Unit) {
             OutlinedButton(onClick = { context.startActivity(android.content.Intent(context, TouchAssetsActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Cambiar sprites · Importar y exportar")
             }
+            OutlinedButton(onClick = { packPicker.launch(arrayOf("application/zip", "application/octet-stream")) },
+                modifier = Modifier.fillMaxWidth()) {
+                Text("Importar sprites Moderno V2 (ZIP)")
+            }
+            Text(
+                "Importá el paquete ModernoV2_Sprites_Originales_8_Corregido.zip. " +
+                "Se guardará solo en este estilo y respetará el archivo 8.png para el botón 8. " +
+                "Los colores originales se mantienen. No modifica Clásico ni Moderno.",
+                style=MaterialTheme.typography.bodySmall)
+            if(packMessage.isNotEmpty()) Text(packMessage, style=MaterialTheme.typography.bodySmall)
             Text("Color de los botones",style=MaterialTheme.typography.titleMedium)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 FilterChip(selected=appearance.tint==null,onClick={update(appearance.copy(colorHex="original"));customHex=""},label={Text("Original")},modifier=Modifier.testTag("color-original"))
@@ -129,11 +156,15 @@ internal fun controlImages(appearance: TouchAppearance, revision: Int = 0, profi
                 ModernoV2Sprites.forPreview(asset, target.id, profile)
             } else asset
             runCatching {
-                val bytes = runCatching { context.assets.open(styledAsset).use { it.readBytes() } }
+                val bytes = runCatching {
+                    if (appearance.style == TouchStyle.MODERN_V2)
+                        ModernoV2Sprites.forPreviewBytes(context, asset, target.id, profile)
+                    else null
+                }.getOrNull() ?: runCatching { context.assets.open(styledAsset).use { it.readBytes() } }
                     .getOrElse { context.assets.open(asset).use { it.readBytes() } }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { bitmap ->
                     images[name] = TouchAppearance.image(bitmap,
-                        appearance.tint ?: if (appearance.style == TouchStyle.MODERN_V2) 0x49CFFF else null)
+                        appearance.tint)
                 }
             }
         }
@@ -150,9 +181,9 @@ internal fun controlImages(appearance: TouchAppearance, revision: Int = 0, profi
 }
 
 @Composable
-private fun AppearanceSample(appearance:TouchAppearance,opacity:Float,feedback:TouchFeedback) {
+private fun AppearanceSample(appearance:TouchAppearance,opacity:Float,feedback:TouchFeedback,revision:Int = 0) {
     val view=LocalView.current
-    val images=controlImages(appearance)
+    val images=controlImages(appearance,revision)
     val specs=remember { listOf("z","x","alpha8","b").map { id->TouchLayouts.controls.first { it.id==id } } }
     var pressed by remember { mutableStateOf<Int?>(null) }
     val current by rememberUpdatedState(appearance)

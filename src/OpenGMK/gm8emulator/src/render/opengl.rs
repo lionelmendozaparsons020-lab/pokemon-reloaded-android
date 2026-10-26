@@ -1006,7 +1006,7 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
         if let Some((img, custom)) = load(control.name, &format!("{}.png",control.name)) {
             let mut image = img.to_rgba8();
             let tint = crate::touch_appearance::settings().tint.or_else(|| {
-                if modern_v2 && !custom {Some([0.286,0.812,1.0])} else {None}
+                None
             });
             if let Some(tint) = tint {
                 for pixel in image.pixels_mut() { crate::touch_appearance::tint_pixel(&mut pixel.0, tint); }
