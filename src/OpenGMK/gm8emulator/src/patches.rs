@@ -84,6 +84,7 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                     pk=real(txt2);
                     nv=real(str);
                     if(pk<1 || pk>1025 || nv<1 || nv>100)exit;
+                    if(sh && pk>1000)exit;
                     if(ex(7788,pk)<=0)exit;
                     if(instance_exists((17)) || instance_exists((386)))exit;
                     with((16)){
@@ -105,6 +106,7 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                     txt1=string_copy(cheat,6,1);
                     txt2=string_copy(cheat,8,1);
                     if(string_digits(txt1)!=txt1 || string_digits(txt2)!=txt2)exit;
+                    var slot,stat;
                     slot=real(txt1);
                     stat=real(txt2);
                     if(slot<1 || slot>6 || stat<1 || stat>6)exit;
@@ -120,6 +122,7 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                 if(string_length(cheat)=6 && string_copy(cheat,1,5)="RADMX"){
                     txt1=string_copy(cheat,6,1);
                     if(string_digits(txt1)!=txt1)exit;
+                    var slot,stat;
                     slot=real(txt1);
                     if(slot<1 || slot>6 || !instance_exists((16)))exit;
                     with((16)){
