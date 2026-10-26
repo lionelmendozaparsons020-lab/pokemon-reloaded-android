@@ -94,6 +94,7 @@ fun TouchSettingsScreen(prefs: Preferences, onBack: () -> Unit) {
                         title = option.title,
                         subtitle = when (option) {
                             TouchStyle.MODERN -> "Sprites semitransparentes y la distribucion por perfiles"
+                            TouchStyle.MODERN_V2 -> "Estilo preparado para el nuevo conjunto de sprites personalizados"
                             TouchStyle.CLASSIC -> "Botones suaves con anillos y etiquetas limpias"
                         },
                         selected = appearance.style == option,
@@ -102,7 +103,7 @@ fun TouchSettingsScreen(prefs: Preferences, onBack: () -> Unit) {
                         onSelect = {
                             appearance = appearance.copy(style = option)
                             prefs.touchAppearance = appearance
-                            if (option == TouchStyle.MODERN) {
+                            if (option != TouchStyle.CLASSIC) {
                                 move = MoveMode.Joystick
                                 prefs.moveMode = MoveMode.Joystick
                             } else {
