@@ -44,9 +44,9 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * Conservative first stage of the mods menu:
- * real backups/restores and official F3 cheats, but no deceptive money/item
- * generators or anti-cheat bypasses without a validated .savc implementation.
+ * In-game commands for the verified GameMaker 8 executable 1.9.2.2.
+ * Backups and the stock F3 entry point remain intact. Extra commands call
+ * native game routines, NOT an off-game save editor or anti-cheat bypass.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -174,12 +174,26 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                     }
                 }
             }
+
+            Text("Mods dentro del juego · Beta 1.9.2.2", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Con F3 activado, iniciá el juego y escribí uno de estos códigos en el cuadro de trucos. " +
+                    "Usalos solo en una partida de prueba después de crear un respaldo.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text("RAD100K — agrega hasta 100.000 de dinero (límite 999.999).")
+            Text("RADITEM — solicita ID y cantidad (1–99) de Poké Balls u objetos comunes.")
+            Text(
+                "Ambos comandos usan funciones internas del juego que actualizan sus controles de integridad. " +
+                    "El uso queda registrado. No garantizan ausencia de advertencias y no funcionan " +
+                    "si el ejecutable no corresponde a la versión analizada.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Text("Editor avanzado", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Dinero, objetos, Pokémon, shinies, IV y movimientos: aún no habilitados. " +
-                    "Requieren identificar y validar el formato .savc y las comprobaciones del juego. " +
-                    "No hay una garantía de que los cambios externos sean indetectables, por lo que " +
-                    "esta versión no intenta desactivar el anticheat ni modificar el progreso de la historia.",
+                "Generador de Pokémon, shinies, IV y movimientos: pendiente de validación. " +
+                    "Los mods disponibles no editan archivos .savc externamente, " +
+                    "ni desactivan la protección del juego o alteran eventos de la historia.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.padding(bottom = BottomNavSpace))
