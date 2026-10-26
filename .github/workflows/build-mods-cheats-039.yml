@@ -2,7 +2,7 @@ name: Build Mods y Cheats 0.3.9
 
 on:
   push:
-    branches: [mods-cheats-039-ingame]
+    branches: [mods-cheats-039-ingame, mods-isolated-10551]
   workflow_dispatch:
 
 permissions:
