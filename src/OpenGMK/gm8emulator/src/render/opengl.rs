@@ -980,10 +980,10 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
     let modern_v2 = crate::touch_appearance::settings().style == crate::touch_appearance::Style::ModernV2;
     let mut images: Vec<(&'static str, image::RgbaImage, bool, u8, bool)> = Vec::new();
     let load = |name: &str, fallback: &str| {
-        image::open(format!("{}/touch-sprites-active/{}.png", dir, name)).ok().map(|img| (img,true))
-            .or_else(|| if modern_v2 {
-                image::open(format!("{}/moderno-v2/{}", dir, fallback)).ok().map(|img| (img,false))
-            } else { None })
+        (if modern_v2 {
+            image::open(format!("{}/moderno-v2/{}", dir, fallback)).ok().map(|img| (img,false))
+        } else { None })
+            .or_else(|| image::open(format!("{}/touch-sprites-active/{}.png", dir, name)).ok().map(|img| (img,true)))
             .or_else(|| image::open(format!("{}/{}", dir, fallback)).ok().map(|img| (img,false)))
     };
     for (name, file) in [
@@ -1021,15 +1021,15 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
             let bundled=format!("{}/{}__{}.png",dir,prefix,name);
             let legacy=format!("{}/touch-sprites-active/{}.png",dir,name);
             let styled=format!("{}/moderno-v2/{}__{}.png",dir,prefix,name);
-            let (file,custom)=if !original && std::path::Path::new(&scoped).is_file(){(scoped,true)}
+            let (file,custom)=if modern_v2 && std::path::Path::new(&styled).is_file(){(styled,false)}
+                else if !original && std::path::Path::new(&scoped).is_file(){(scoped,true)}
                 else if !original && std::path::Path::new(&legacy).is_file(){continue}
-                else if modern_v2 && std::path::Path::new(&styled).is_file(){(styled,false)}
                 else if std::path::Path::new(&bundled).is_file(){(bundled,false)}
                 else if original{(format!("{}/{}.png",dir,name),false)}else{continue};
             if let Ok(img)=image::open(file){
                 let mut img=img.to_rgba8();
                 let tint=crate::touch_appearance::settings().tint.or_else(|| {
-                    if modern_v2 && !custom {Some([0.286,0.812,1.0])} else {None}
+                    None
                 });
                 if let Some(tint)=tint{for pixel in img.pixels_mut(){crate::touch_appearance::tint_pixel(&mut pixel.0,tint);}}
                 images.push((name,img,custom,context,true));
