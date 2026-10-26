@@ -1469,6 +1469,12 @@ pub fn android_entry(app: AndroidApp) {
     // The pad layout, the touch overlay and the video mode are read once, before any input can arrive.
     load_controls();
     load_touch();
+    // Official F3 cheats are part of Pokémon Reloaded; this flag merely exposes
+    // their existing key on the touch overlay, without patching game data.
+    let official_f3 = fs::read_to_string(storage_path("mods.conf"))
+        .map(|text| text.lines().any(|line| line.trim() == "official_f3=1"))
+        .unwrap_or(false);
+    crate::touch_controls::set_official_f3_enabled(official_f3);
     load_video();
     crate::touch_controls::load_layout(&fs::read_to_string(storage_path("touch-layout.conf")).unwrap_or_default());
     crate::touch_appearance::load(&fs::read_to_string(storage_path("touch-appearance.conf")).unwrap_or_default());
