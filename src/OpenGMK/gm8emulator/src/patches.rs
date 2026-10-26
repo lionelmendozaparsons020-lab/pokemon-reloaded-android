@@ -69,6 +69,30 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
             "#;
             Some(source.replacen(F3, &format!("{}{}", F3, ACTIONS), 1))
         },
+        // Reloaded limits Master Balls held/used to those awarded by story
+        // events. CodMb reports "Corrupción D...H..." even if the ball
+        // inventory and serialized save are internally consistent. Allow the
+        // experimental mod profile's ordinary extra Master Balls, while
+        // preserving the deliberate protection sentinel values above 1000.
+        // The normal profile keeps the original CodMb script unchanged.
+        "CodMb" if MOD_MODE.load(Ordering::Relaxed) => {
+            const QUOTA_CHECK: &str = "if(has>dis)ex(9669,ex(9876,ex(9863,6845),string(has),string(dis)));";
+            const COUNT: &str = "has=ex(8815,4)+ex(8816,4);";
+            const SENTINEL: &str = "if(global.pkdexC[944]=true){has=4062+11;dis=4;}";
+            if !source.contains(QUOTA_CHECK)
+                || !source.contains(COUNT)
+                || !source.contains(SENTINEL)
+                || !source.contains("return has<=dis;") {
+                return None;
+            }
+            // Ordinary Master Ball count is never above 999 under the game's
+            // own bag limits. Sentinel counts >=1000 remain unmodified.
+            Some(source.replacen(
+                QUOTA_CHECK,
+                &format!("if(has>dis && has<=999)dis=has; {}", QUOTA_CHECK),
+                1,
+            ))
+        },
         _ => None,
     }
 }
@@ -89,4 +113,18 @@ mod tests {
         assert!(fixup("ExecuteCheat", "wrong edition").is_none());
         set_mod_mode(false);
     }
+    #[test]
+    fn master_ball_allowance_only_in_mod_profile_and_preserves_sentinels() {
+        let original = r#"var dis,has; dis=0; has=ex(8815,4)+ex(8816,4); if(global.pkdexC[944]=true){has=4062+11;dis=4;} if(has>dis)ex(9669,ex(9876,ex(9863,6845),string(has),string(dis))); return has<=dis;"#;
+        set_mod_mode(false);
+        assert!(fixup("CodMb", original).is_none());
+        set_mod_mode(true);
+        let modified = fixup("CodMb", original).unwrap();
+        assert!(modified.contains("if(has>dis && has<=999)dis=has;"));
+        assert!(modified.contains("if(global.pkdexC[944]=true){has=4062+11;dis=4;}"));
+        assert!(modified.contains("return has<=dis;"));
+        assert!(fixup("CodMb", "unknown older game version").is_none());
+        set_mod_mode(false);
+    }
+
 }
