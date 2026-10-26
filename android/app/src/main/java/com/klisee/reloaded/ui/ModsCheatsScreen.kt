@@ -182,11 +182,18 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text("RAD100K — agrega hasta 100.000 de dinero (límite 999.999).")
-            Text("RADITEM — solicita ID y cantidad (1–99) de Poké Balls u objetos comunes.")
+            Text("RADITEM — añade 10 unidades del objeto Poké Ball con ID 1.")
+            Text("RADITEM1X10 — añade 10 unidades del objeto con ID 1.")
+            Text("RADITEM13X99 — añade 99 unidades del objeto con ID 13.")
             Text(
-                "Ambos comandos usan funciones internas del juego que actualizan sus controles de integridad. " +
-                    "El uso queda registrado. No garantizan ausencia de advertencias y no funcionan " +
-                    "si el ejecutable no corresponde a la versión analizada.",
+                "El formato es RADITEM + ID + X + CANTIDAD. Se permiten IDs 1–821, " +
+                    "solo Poké Balls u objetos comunes, y cantidades de 1 a 99. " +
+                    "Los códigos actúan directamente, SIN abrir una segunda ventana o diálogo.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Se usan funciones internas que actualizan las comprobaciones del juego. " +
+                    "El uso queda registrado y la compatibilidad con partidas modificadas no está garantizada.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text("Editor avanzado", style = MaterialTheme.typography.titleLarge)

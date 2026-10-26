@@ -28,35 +28,43 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                 return None;
             }
             let actions = r#"
-                // Extra commands for an explicitly backed-up test save.
-                // RAD100K uses GestionDinero / SetDinero, which check and renew
-                // the money witness exactly as normal gameplay does.
+                // Commands are synchronous but MUST NOT open a second blocking modal
+                // on the same frame as GetDialogString(F3). Otherwise the Android
+                // renderer can appear frozen while audio continues to play.
+                // Use only in-game security-aware transaction scripts.
                 if(cheat="RAD100K"){
                     if(!instance_exists((3)) || !instance_exists((16)))exit;
-                    if(global.dinero>=999999){ex(9669,"Ya tienes el maximo de dinero.");exit;}
-                    if(global.dinero>899999){ex(9602,999999);}
-                    else{ex(7736,100000);}
-                    global.numcheats+=1;
-                    ex(9669,"Mod: dinero entregado. Guarda tu partida.");
+                    if(global.wait!=false)exit;
+                    if(global.dinero<999999){
+                        ex(7736,min(100000,999999-global.dinero));
+                        global.numcheats+=1;
+                    }
                     exit;
                 }
-                // RADITEM accepts ordinary Pokeballs/consumables only; PillaObject
-                // handles the appropriate pocket and its integrity witness.
-                // Reject key objects, technical machines and plot flags.
+                // Fast path: give ten balls with no nested numeric dialogs.
                 if(cheat="RADITEM"){
                     if(!instance_exists((3)) || !instance_exists((16)))exit;
-                    i=ex(7753,"ID de objeto o Pokeball:",false,1,6000);
-                    if(i<=0)exit;
-                    if(!ex(7502,i) && !ex(7507,i)){
-                        ex(9669,"Solo se admiten Pokeballs y objetos comunes.");
-                        exit;
-                    }
-                    j=ex(7753,"Cantidad (1-99):",false,1,99);
-                    if(j<=0)exit;
-                    if(ex(8963,i,j)){
-                        global.numcheats+=1;
-                        ex(9669,"Mod: objetos entregados. Guarda tu partida.");
-                    }
+                    if(global.wait!=false)exit;
+                    if(ex(8963,1,10))global.numcheats+=1;
+                    exit;
+                }
+                // User chooses item and quantity in a SINGLE F3 string:
+                // RADITEM1X10, RADITEM13X99, RADITEM821X1, etc.
+                // Length never exceeds the 13-character F3 input limit.
+                if(string_copy(cheat,1,7)="RADITEM"){
+                    if(!instance_exists((3)) || !instance_exists((16)))exit;
+                    if(global.wait!=false)exit;
+                    txt1=string_copy(cheat,8,string_length(cheat)-7);
+                    H=string_pos("X",txt1);
+                    if(H<=1 || H>=string_length(txt1))exit;
+                    txt2=string_copy(txt1,1,H-1);
+                    str=string_copy(txt1,H+1,string_length(txt1)-H);
+                    if(string_digits(txt2)!=txt2 || string_digits(str)!=str)exit;
+                    i=real(txt2);
+                    j=real(str);
+                    if(i<1 || i>821 || j<1 || j>99)exit;
+                    if(!ex(7502,i) && !ex(7507,i))exit;
+                    if(ex(8963,i,j))global.numcheats+=1;
                     exit;
                 }
             "#;
@@ -69,14 +77,21 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::fixup;
+
     #[test]
     fn only_patches_recognized_original_cheat_script() {
         let source = r#"if(cheat="INCONSCIENTE"){} Ch= ex(7754,ex(9868,9),"",0,13);cheat=string_upper(Ch); global.numcheats+=1;"#;
-        let new_source = fixup("ExecuteCheat", source).expect("matching script");
-        assert!(new_source.contains("if(cheat=\"RAD100K\")"));
-        assert!(new_source.contains("if(cheat=\"RADITEM\")"));
-        assert!(new_source.contains("ex(7736,100000)"));
-        assert!(new_source.contains("ex(8963,i,j)"));
+        let changed = fixup("ExecuteCheat", source).expect("matching script");
+        let injected = changed.split("cheat=string_upper(Ch);").nth(1).unwrap();
+        assert!(injected.contains("if(cheat=\"RAD100K\")"));
+        assert!(injected.contains("if(cheat=\"RADITEM\")"));
+        assert!(injected.contains("string_digits(txt2)"));
+        assert!(injected.contains("ex(7736,min(100000,999999-global.dinero))"));
+        assert!(injected.contains("ex(8963,1,10)"));
+        // Never open a nested modal once F3 has closed.
+        for dangerous in ["ex(7753,", "ex(7754,", "ex(9669,", "ex(9671,"] {
+            assert!(!injected.contains(dangerous), "unexpected nested dialog: {}", dangerous);
+        }
         assert!(fixup("ExecuteCheat", "unknown game script").is_none());
         assert!(fixup("AnotherScript", source).is_none());
     }
