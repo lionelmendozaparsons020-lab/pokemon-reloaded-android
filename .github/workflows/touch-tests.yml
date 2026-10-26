@@ -4,9 +4,16 @@ on:
   push:
     branches:
       - integracion-controles-touch-035
+      - pr-nueva-controles-039-moderno-v2
     paths:
       - "src/OpenGMK/gm8emulator/src/**"
       - "verification/**"
+      - ".github/workflows/touch-tests.yml"
+  pull_request:
+    paths:
+      - "src/OpenGMK/gm8emulator/src/**"
+      - "verification/**"
+      - "android/app/src/**"
       - ".github/workflows/touch-tests.yml"
   workflow_dispatch:
 
