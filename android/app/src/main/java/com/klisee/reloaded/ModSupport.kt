@@ -32,12 +32,25 @@ class ModSupport(private val context: Context) {
             writeRuntimeConfig()
         }
 
+    /** This is read before the next game launch; the current session never switches mode. */
+    var modMode: Boolean
+        get() = settings.getBoolean("modMode", false)
+        set(value) {
+            check(!GameSession.active) { "Cerrá el juego antes de cambiar de modo." }
+            check(settings.edit().putBoolean("modMode", value).commit()) {
+                "No se pudo guardar el modo."
+            }
+            writeRuntimeConfig()
+        }
+
     /** Loaded by the native touch overlay when starting the game. */
     fun writeRuntimeConfig() {
         val atomic = AtomicFile(File(context.filesDir, "mods.conf"))
         val stream = atomic.startWrite()
         try {
-            stream.write(if (showOfficialF3) "official_f3=1\n".toByteArray() else "official_f3=0\n".toByteArray())
+            val f3 = if (showOfficialF3) "1" else "0"
+            val mode = if (modMode) "1" else "0"
+            stream.write("official_f3=$f3\nmod_mode=$mode\n".toByteArray())
             atomic.finishWrite(stream)
         } catch (error: Exception) {
             atomic.failWrite(stream)

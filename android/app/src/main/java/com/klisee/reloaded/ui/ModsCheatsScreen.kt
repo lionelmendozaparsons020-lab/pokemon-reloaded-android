@@ -56,6 +56,7 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var officialF3 by remember { mutableStateOf(mods.showOfficialF3) }
+    var isolatedMode by remember { mutableStateOf(mods.modMode) }
     var backups by remember { mutableStateOf(mods.backups()) }
     var busy by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf<File?>(null) }
@@ -131,6 +132,48 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
             )
 
+            Text("Modo Mods experimental", style = MaterialTheme.typography.titleLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Usar partida independiente")
+                    Text(
+                        "El modo normal no comparte guardados con Modo Mods. El primer inicio " +
+                            "crea una copia de tu progreso actual y después avanzan por separado.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = isolatedMode,
+                    onCheckedChange = { enabled ->
+                        runCatching { mods.modMode = enabled }
+                            .onSuccess { isolatedMode = enabled }
+                            .onFailure { error ->
+                                scope.launch { snackbar.showSnackbar(error.message ?: "No se pudo cambiar de modo") }
+                            }
+                    },
+                )
+            }
+            if (isolatedMode) {
+                Text(
+                    "MODO MODS ACTIVADO · Reiniciá el juego. Prueba únicamente con una copia " +
+                        "de partida. El modo experimental no garantiza que el juego acepte todos los objetos.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text("RAD100K — entrega hasta 100.000 de dinero.")
+                Text("RADITEM — entrega 10 unidades del objeto ID 1.")
+                Text("RADITEM1X12 — entrega 12 unidades del objeto ID 1.")
+                Text(
+                    "RADITEM + ID + X + cantidad (máximo 99); solo objetos comunes y Poké Balls. " +
+                        "Estos comandos están disponibles únicamente dentro de Modo Mods.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text("Los cambios de modo se aplican al volver a iniciar el juego.", style = MaterialTheme.typography.bodySmall)
+
             Text("Protección de partidas", style = MaterialTheme.typography.titleLarge)
             Button(
                 onClick = {
@@ -175,17 +218,12 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 }
             }
 
-            Text("Aviso de seguridad", style = MaterialTheme.typography.titleLarge)
+            Text("Protección y diagnóstico", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Los comandos experimentales RAD100K y RADITEM están desactivados. " +
-                    "El juego detectó una anomalía 10551 al utilizarlos y terminó la sesión. " +
-                    "No guardes una partida después de recibir ese aviso.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                "El botón F3 sigue disponible para los trucos oficiales del juego. " +
-                    "Primero creá un respaldo. Esta versión no altera el formato de las partidas " +
-                    "ni desactiva las comprobaciones del juego.",
+                "La versión anterior producía la anomalía 10551 al ejecutar acciones " +
+                    "de objetos desde F3. Esta versión usa el contexto de jugador original " +
+                    "y no desactiva la validación de inventario o dinero. " +
+                    "No guardes si aparece cualquier aviso de anomalía.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.padding(bottom = BottomNavSpace))
