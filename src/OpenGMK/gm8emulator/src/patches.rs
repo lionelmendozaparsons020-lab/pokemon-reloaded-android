@@ -71,7 +71,9 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
             // A native encounter is considerably safer than editing encrypted
             // party/box fields; normal capture persists all checksums & metadata.
             const POKEMON: &str = r#"
-                if(string_copy(cheat,1,5)="RADPK"){
+                if(string_copy(cheat,1,5)="RADPK" || string_copy(cheat,1,5)="RADSH"){
+                    var sh, pk, nv;
+                    sh=(string_copy(cheat,1,5)="RADSH");
                     if(!instance_exists((16)) || !instance_exists((14)))exit;
                     txt1=string_copy(cheat,6,string_length(cheat)-5);
                     H=string_pos("X",txt1);
@@ -85,7 +87,9 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                     if(ex(7788,pk)<=0)exit;
                     if(instance_exists((17)) || instance_exists((386)))exit;
                     with((16)){
+                        global.rad_next_shiny=sh;
                         ex(8038,pk,nv,0);
+                        global.rad_next_shiny=0;
                         global.lugar=room;
                         instance_create(0,0,(386));
                         global.numcheats+=1;
@@ -93,7 +97,60 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                     exit;
                 }
             "#;
-            Some(source.replacen(F3, &format!("{}{}{}", F3, ACTIONS, POKEMON), 1))
+            const NATURAL_TALENT: &str = r#"
+                // Raise ONE natural-talent digit (1..6) on party slot 1..6.
+                // Native script 9768 manages masked NTV and party checksum.
+                if(string_length(cheat)=8 && string_copy(cheat,1,5)="RADNV"
+                   && string_copy(cheat,7,1)="X"){
+                    txt1=string_copy(cheat,6,1);
+                    txt2=string_copy(cheat,8,1);
+                    if(string_digits(txt1)!=txt1 || string_digits(txt2)!=txt2)exit;
+                    slot=real(txt1);
+                    stat=real(txt2);
+                    if(slot<1 || slot>6 || stat<1 || stat>6)exit;
+                    if(!instance_exists((16)))exit;
+                    with((16)){
+                        if(global.pkmn1[slot-1]>0){
+                            if(ex(9768,slot-1,stat))global.numcheats+=1;
+                        }
+                    }
+                    exit;
+                }
+                // Use the native all-max NTV path (argument1=200).
+                if(string_length(cheat)=6 && string_copy(cheat,1,5)="RADMX"){
+                    txt1=string_copy(cheat,6,1);
+                    if(string_digits(txt1)!=txt1)exit;
+                    slot=real(txt1);
+                    if(slot<1 || slot>6 || !instance_exists((16)))exit;
+                    with((16)){
+                        if(global.pkmn1[slot-1]>0){
+                            if(ex(9768,slot-1,200))global.numcheats+=1;
+                        }
+                    }
+                    exit;
+                }
+            "#;
+            Some(source.replacen(F3, &format!("{}{}{}{}", F3, ACTIONS, POKEMON, NATURAL_TALENT), 1))
+        },
+        // Only for the isolated Mod profile: honor an opt-in shiny flag during
+        // game-native creation of a wild Pokémon. The official IniciaSalvaje
+        // script still generates species, stats, NTV, attacks and checksums.
+        "IniciaSalvaje" if MOD_MODE.load(Ordering::Relaxed) => {
+            const MARKER: &str = "global.selue_pk2[POS]=ex(7718,global.pkmn2[POS]);";
+            const SHINY_ROLL: &str = "if(ex(7521,argument0)=false && ceil(random(SHINY))=SHINY)";
+            if !source.contains(MARKER) || !source.contains(SHINY_ROLL)
+                || !source.contains("global.IV2[POS]=floor(random(1000000));") {
+                return None;
+            }
+            Some(source.replacen(
+                MARKER,
+                &format!(
+                    r#"if(variable_global_exists("rad_next_shiny") && global.rad_next_shiny=1 &&
+                    ex(7521,global.pkmn2[POS])=false)global.pkmn2[POS]+=1000; {}"#,
+                    MARKER
+                ),
+                1,
+            ))
         },
         // Reloaded limits Master Balls held/used to those awarded by story
         // events. CodMb reports "Corrupción D...H..." even if the ball
@@ -138,6 +195,9 @@ mod tests {
         assert!(changed.contains("ex(7736,min("));
         assert!(changed.contains("ex(8038,pk,nv,0)"));
         assert!(changed.contains("instance_create(0,0,(386))"));
+        assert!(changed.contains("global.rad_next_shiny=sh;"));
+        assert!(changed.contains("ex(9768,slot-1,stat)"));
+        assert!(changed.contains("ex(9768,slot-1,200)"));
         assert!(fixup("ExecuteCheat", "wrong edition").is_none());
         set_mod_mode(false);
     }
@@ -152,6 +212,20 @@ mod tests {
         assert!(modified.contains("if(global.pkdexC[944]=true){has=4062+11;dis=4;}"));
         assert!(modified.contains("return has<=dis;"));
         assert!(fixup("CodMb", "unknown older game version").is_none());
+        set_mod_mode(false);
+    }
+
+    #[test]
+    fn shiny_hook_only_targets_native_encounter_and_mods() {
+        let source = "global.IV2[POS]=floor(random(1000000)); if(ex(7521,argument0)=false && ceil(random(SHINY))=SHINY){} global.selue_pk2[POS]=ex(7718,global.pkmn2[POS]);";
+        set_mod_mode(false);
+        assert!(fixup("IniciaSalvaje", source).is_none());
+        set_mod_mode(true);
+        let patched = fixup("IniciaSalvaje", source).expect("hook");
+        assert!(patched.contains("variable_global_exists"));
+        assert!(patched.contains("global.pkmn2[POS]+=1000"));
+        assert!(patched.contains("global.selue_pk2[POS]=ex(7718"));
+        assert!(fixup("IniciaSalvaje", "other game version").is_none());
         set_mod_mode(false);
     }
 
