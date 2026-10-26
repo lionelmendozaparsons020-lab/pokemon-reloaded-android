@@ -209,6 +209,20 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 "o «Anomalía», NO guardes; salí y restaurá el respaldo.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            Text("Pokémon de eventos anticipados", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "En Modo Mods se admiten capturas adelantadas de las especies del catálogo de eventos, " +
+                    "incluido Cosmog, aunque todavía no hayas completado su misión. Esto no completa " +
+                    "medallas, misiones ni eventos por vos y no afecta el Modo Normal. " +
+                    "Se mantienen las comprobaciones de integridad del guardado y del inventario.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Si antes tenías «Corrupción J100E980» u otro J…E… por una captura anticipada, " +
+                    "probá cargar el mismo slot desde Modo Mods. Hacé un respaldo primero. " +
+                    "No guardes si aparece una anomalía diferente.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Text("Añadir Pokémon · Encuentro", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Elegí especie y nivel. Modo Mods prepara un encuentro salvaje para capturarlo " +
