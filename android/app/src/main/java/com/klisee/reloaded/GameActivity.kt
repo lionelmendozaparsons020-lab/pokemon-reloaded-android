@@ -115,6 +115,7 @@ class GameActivity : NativeActivity() {
         }
         super.onCreate(savedInstanceState)
         instance = this
+        GameSession.active = true
         if (Preferences(applicationContext).keepScreenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -133,6 +134,7 @@ class GameActivity : NativeActivity() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        GameSession.active = false
         // El motor terminar la actividad es lo que cierra la sesión; pasar a segundo plano no.
         if (isFinishing) runCatching { DiscordRpcService.stop(applicationContext) }
         super.onDestroy()
