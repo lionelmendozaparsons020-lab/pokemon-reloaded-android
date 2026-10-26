@@ -24,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -61,8 +62,17 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
     var backups by remember { mutableStateOf(mods.backups()) }
     var pokemonId by remember { mutableStateOf("25") }
     var pokemonLevel by remember { mutableStateOf("10") }
+    var pokemonShiny by remember { mutableStateOf(false) }
+    var teamSlot by remember { mutableStateOf("1") }
+    var selectedStat by remember { mutableStateOf(1) }
     var busy by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf<File?>(null) }
+    fun copyCheat(code: String, message: String) {
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Pokémon Reloaded F3",code))
+        scope.launch { snackbar.showSnackbar(message) }
+    }
 
     restoring?.let { backup ->
         AlertDialog(
@@ -183,6 +193,22 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 )
             }
 
+            Text("Guía rápida · usar Mods y Cheats", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "1. Cerrá el juego y tocá «Crear copia de seguridad» abajo. " +
+                "2. Activá «Usar partida independiente» y «Botón F3 en pantalla». " +
+                "3. Iniciá o reiniciá Pokémon Reloaded. " +
+                "4. Durante la exploración tocá F3, escribí el código que copiaste aquí " +
+                "y confirmá con Enter/OK. Algunos códigos no funcionan en combate, menús o diálogos. " +
+                "5. Probá el resultado. Guardá, cerrá y volvé a cargar el modo experimental para comprobarlo.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Si copiás un código, tenés que introducirlo en el cuadro de F3 dentro del juego: " +
+                "el botón de copiar no ejecuta el truco por sí solo. Si aparece «Corrupción» " +
+                "o «Anomalía», NO guardes; salí y restaurá el respaldo.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Text("Añadir Pokémon · Encuentro", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Elegí especie y nivel. Modo Mods prepara un encuentro salvaje para capturarlo " +
@@ -207,15 +233,24 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
             }
             Text("Ejemplos: Bulbasaur 1 · Charizard 6 · Pikachu 25 · Eevee 133 · Mewtwo 150 · Lucario 448.",
                 style = MaterialTheme.typography.bodySmall)
-            val pokemonCode = "RADPK" + pokemonId + "X" + pokemonLevel
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Pokémon shiny (variocolor)")
+                    Text("El próximo encuentro creado por este código será shiny; luego hay que capturarlo.",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = pokemonShiny, onCheckedChange = { pokemonShiny = it })
+            }
+            val pokemonCode = (if (pokemonShiny) "RADSH" else "RADPK") + pokemonId + "X" + pokemonLevel
             Button(
                 enabled = isolatedMode && (pokemonId.toIntOrNull() ?: 0) in 1..1025 &&
                     (pokemonLevel.toIntOrNull() ?: 0) in 1..100 && pokemonCode.length <= 13,
                 onClick = {
-                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                        as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Código Pokémon", pokemonCode))
-                    scope.launch { snackbar.showSnackbar("Copiado: $pokemonCode. Pegalo en F3 mientras explorás.") }
+                    copyCheat(pokemonCode, "Copiado: $pokemonCode. Escribilo en F3 al explorar.")
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Copiar código: $pokemonCode") }
@@ -223,6 +258,80 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 "Requiere Modo Mods y F3 activados. Al explorar, introducí el código en F3 " +
                     "para iniciar un encuentro y capturarlo de forma normal. " +
                     "Solo funciona con especies válidas. No guardes si aparece una anomalía.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+
+            Text("Cambiar talento natural (NTV) de tu equipo", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Los NTV son los valores naturales de cada Pokémon; no son los IV de entrenamiento. " +
+                "En Reloaded los seis NTV van de 1 a 10. Aquí los subimos con la función original " +
+                "del juego, que también actualiza las comprobaciones internas. " +
+                "No modifica directamente el archivo .savc.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = teamSlot,
+                onValueChange = { teamSlot = it.filter(Char::isDigit).take(1) },
+                label = { Text("Posición del Pokémon en tu equipo (1 a 6)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Elegí qué talento natural mejorar:", style = MaterialTheme.typography.titleMedium)
+            val naturalStats = listOf("PS", "Ataque", "Defensa", "At. Esp.", "Def. Esp.", "Velocidad")
+            naturalStats.chunked(3).forEachIndexed { rowIndex, group ->
+                Row(modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    group.forEachIndexed { colIndex, label ->
+                        val statIndex = rowIndex * 3 + colIndex + 1
+                        FilterChip(
+                            selected = selectedStat == statIndex,
+                            onClick = { selectedStat = statIndex },
+                            label = { Text(label) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            val slotOk = (teamSlot.toIntOrNull() ?: 0) in 1..6
+            val statCode = "RADNV" + teamSlot + "X" + selectedStat
+            val maxCode = "RADMX" + teamSlot
+            Button(
+                onClick = { copyCheat(statCode, "Código $statCode copiado. Subirá un punto el NTV seleccionado.") },
+                enabled = isolatedMode && slotOk,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Subir un nivel natural: $statCode") }
+            OutlinedButton(
+                onClick = { copyCheat(maxCode, "Código $maxCode copiado. NTV completos al máximo (10).") },
+                enabled = isolatedMode && slotOk,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("NTV al máximo del Pokémon: $maxCode") }
+            Text(
+                "Ejemplo: RADNV1X6 aumenta un punto la Velocidad natural del primer Pokémon. " +
+                "RADMX1 establece al máximo los seis NTV del primer Pokémon. " +
+                "Si ya está al máximo, no hace nada. La posición es la del equipo, NO de la caja.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            Text("Shiny de un Pokémon que ya tenés", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "La opción shiny del encuentro afecta al Pokémon salvaje nuevo, no transforma a " +
+                "uno de tu equipo. Para convertir uno existente, Reloaded trae la Máquina Shinyficadora: " +
+                "al cumplir los requisitos de la historia, escribí SHINY en F3 para consultar " +
+                "la contraseña de esa partida, y usala en la máquina.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(onClick = {
+                copyCheat("SHINY", "SHINY copiado. Funciona al cumplir los requisitos del juego.")
+            }, modifier = Modifier.fillMaxWidth()) { Text("Copiar código oficial SHINY") }
+
+            Text("IV de entrenamiento · objetos", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Los IV de entrenamiento (0–9) son distintos de los NTV. " +
+                "En Reloaded mejoran al entrenar o usar vitaminas. Podés probar " +
+                "RADITEM36X5 para obtener 5 Proteínas (Ataque), " +
+                "RADITEM33X5 para Calcio (At. Esp.) o RADITEM37X5 para Zinc (Def. Esp.). " +
+                "Después utilizá esos objetos normalmente en la mochila. No confundas IV con NTV.",
                 style = MaterialTheme.typography.bodySmall,
             )
 
