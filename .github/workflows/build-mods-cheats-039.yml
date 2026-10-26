@@ -46,7 +46,9 @@ jobs:
           /tmp/touch-tests --test-threads=1
           rustc +1.99.0 --edition=2021 --test src/OpenGMK/gm8emulator/src/box_touch.rs -o /tmp/box-touch-tests
           /tmp/box-touch-tests --test-threads=1
-      - name: Test GML cheat patch applicability\n        run: rustc +1.99.0 --edition=2021 --test src/OpenGMK/gm8emulator/src/patches.rs -o /tmp/mods-patch-tests && /tmp/mods-patch-tests\n      - name: Compile ARM64 engine
+      - name: Test GML cheat patch applicability
+        run: rustc +1.99.0 --edition=2021 --test src/OpenGMK/gm8emulator/src/patches.rs -o /tmp/mods-patch-tests && /tmp/mods-patch-tests
+      - name: Compile ARM64 engine
         working-directory: src/OpenGMK
         run: cargo +1.99.0 ndk -t arm64-v8a --platform 29 build -p gm8emulator --lib --release --locked
       - name: Compile Android and unit tests
