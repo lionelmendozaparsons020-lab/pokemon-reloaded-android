@@ -168,7 +168,9 @@ internal fun controlImages(appearance: TouchAppearance, revision: Int = 0, profi
                 }
             }
         }
-        val custom=Preferences(context).touchSprites
+        val custom = if (appearance.style == TouchStyle.MODERN_V2 &&
+            ModernoV2Sprites.forPreviewBytes(context, "alpha8.png", "alpha8", profile) != null
+        ) emptyMap() else Preferences(context).touchSprites
         for (target in TouchSprites.targets) runCatching {TouchSprites.read(context,TouchSprites.effectiveKey(target.id,profile,custom),custom)?.let {bytes ->
             BitmapFactory.decodeByteArray(bytes,0,bytes.size)?.let {bitmap ->
                 val image=TouchAppearance.image(bitmap, appearance.tint)
