@@ -22,6 +22,7 @@ object Emulator {
         prefs.writeTouchLayouts(context.filesDir)
         prefs.writeTouchAppearance(context.filesDir)
         prefs.writeGameLanguage(context.filesDir)
+        ModSupport(context).writeRuntimeConfig()
         TouchSprites.writeRuntime(context, prefs.touchSprites)
         TouchLabels.writeRuntime(context, context.filesDir)
         context.startActivity(Intent().setClassName(context.packageName, GAME_ACTIVITY))
