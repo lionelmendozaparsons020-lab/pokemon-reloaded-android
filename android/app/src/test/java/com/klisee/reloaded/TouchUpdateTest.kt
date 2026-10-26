@@ -51,4 +51,13 @@ world joystick 0.15 0.65 0.8 1
             assertTrue(a.y - a.radius >= 0f)
         }
     }
+
+    @Test fun modernV2IsDistinctAndPersistsWithoutChangingClassicOrModern() {
+        val v2 = TouchAppearance(style=TouchStyle.MODERN_V2)
+        assertTrue(TouchStyle.entries.any { it.id=="modern_v2" && it.title=="Moderno V2" })
+        assertEquals(TouchStyle.MODERN_V2, TouchAppearance.parse(v2.encode()).style)
+        assertEquals(TouchStyle.MODERN, TouchAppearance.parse(TouchAppearance().encode()).style)
+        assertEquals(TouchStyle.CLASSIC, TouchAppearance.parse(TouchAppearance(style=TouchStyle.CLASSIC).encode()).style)
+        assertEquals(TouchStyle.MODERN, TouchAppearance.parse("touch-appearance-v1\\nstyle=unknown\\n").style)
+    }
 }
