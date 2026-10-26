@@ -9,6 +9,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.CRC32
 import java.util.zip.ZipFile
 
 /**
@@ -108,10 +109,16 @@ class ModSupport(private val context: Context) {
                     "El respaldo contiene archivos ajenos al juego."
                 }
                 // Read the payload to validate its CRC rather than trusting the directory alone.
+                val crc = CRC32()
                 zip.getInputStream(entry).use { input ->
                     val buffer = ByteArray(8192)
-                    while (input.read(buffer) != -1) Unit
+                    while (true) {
+                        val size = input.read(buffer)
+                        if (size == -1) break
+                        crc.update(buffer, 0, size)
+                    }
                 }
+                check(entry.crc == crc.value) { "Un archivo del respaldo está dañado." }
                 count++
             }
             check(count > 0) { "El respaldo está vacío." }
