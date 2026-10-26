@@ -58,6 +58,7 @@ class ModSupport(private val context: Context) {
      */
     suspend fun createBackup(repo: GameRepository): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
+            check(!GameSession.active) { "Cerrá primero el juego para crear un respaldo consistente." }
             check(repo.status() is GameRepository.Status.Ready) { "Instalá el juego primero." }
             val source = repo.exportSaves().getOrThrow()
             check(backupsDir.isDirectory || backupsDir.mkdirs()) {
@@ -84,6 +85,7 @@ class ModSupport(private val context: Context) {
      */
     suspend fun restoreBackup(repo: GameRepository, backup: File): Result<Int> = withContext(Dispatchers.IO) {
         runCatching {
+            check(!GameSession.active) { "Cerrá primero el juego antes de restaurar la partida." }
             check(backup.parentFile?.canonicalFile == backupsDir.canonicalFile &&
                 backup in backups() && backup.isFile) { "Respaldo no válido." }
             verifyArchive(backup)
