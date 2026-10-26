@@ -1703,6 +1703,37 @@ fn push_polygon(out: &mut Vec<f32>, ww: f32, wh: f32, points: &[(f32, f32)], cx:
     }
 }
 
+/// Fixed socket, connecting shaft, contact shadow and eight direction detents.
+#[cfg(target_os = "android")]
+fn push_stick_mount(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32,
+    r: f32, ox: f32, oy: f32, tint: Option<[f32; 3]>) {
+    let t = tint.unwrap_or([1.0; 3]);
+    let shade = |g: f32, a: f32| [t[0]*g, t[1]*g, t[2]*g, a];
+    let (kx, ky) = (cx + ox*r*0.50, cy + oy*r*0.50);
+    push_circle(out, ww, wh, cx, cy, r*0.24, shade(0.04, 0.65));
+    push_ring(out, ww, wh, cx, cy, r*0.24, r*0.035, shade(0.45, 0.48));
+    push_circle(out, ww, wh, kx, ky+r*0.055, r*0.39, shade(0.0, 0.28));
+    let len = ox.hypot(oy);
+    if len > 0.001 {
+        let (px, py) = (-oy/len*r*0.105, ox/len*r*0.105);
+        let points = [(cx+px,cy+py), (kx+px,ky+py), (kx-px,ky-py), (cx-px,cy-py)];
+        push_polygon(out, ww, wh, &points, (cx+kx)*0.5, (cy+ky)*0.5,
+            shade(0.50,0.8), shade(0.15,0.8));
+    }
+    let dirs = crate::touch_controls::move_dirs();
+    let vx = dirs[3] as i8 - dirs[2] as i8;
+    let vy = dirs[1] as i8 - dirs[0] as i8;
+    let length = (vx as f32).hypot(vy as f32);
+    for i in 0..8 {
+        let angle = i as f32 * std::f32::consts::FRAC_PI_4;
+        let (dx,dy) = (angle.cos(),angle.sin());
+        let selected = length > 0.0 && dx*vx as f32 + dy*vy as f32 > length*0.98;
+        push_circle(out, ww, wh, cx+dx*r*0.84, cy+dy*r*0.84,
+            r*if selected {0.027} else {0.015},
+            if selected {shade(0.85,0.85)} else {shade(0.45,0.25)});
+    }
+}
+
 /// The modern movement control: a clean translucent disc with a single rounded cross that lights up
 /// the arm being pressed, or a knob that follows the thumb (joystick).
 #[cfg(target_os = "android")]
@@ -1763,7 +1794,8 @@ fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
             push_arrow(out, ww, wh, cx + dx * r * 0.45, cy + dy * r * 0.45, r * 0.115, dir, color);
         }
     } else {
-        let (kx, ky) = (cx + ox * r * 0.52, cy + oy * r * 0.52);
+        push_stick_mount(out, ww, wh, cx, cy, r, ox, oy, tint);
+        let (kx, ky) = (cx + ox * r * 0.50, cy + oy * r * 0.50);
         let kr = r * 0.34;
         push_circle(out, ww, wh, kx, ky, kr * 1.06, [0.0, 0.0, 0.0, 0.22]);
         push_circle(out, ww, wh, kx, ky, kr, shade(0.27, 0.55));
@@ -1882,6 +1914,8 @@ impl RendererImpl {
         // Textured geometry (the pixel-art controls) goes in its own buffer, because it samples the
         // artwork rather than the 1x1 white texture the plain shapes use.
         let mut sprites: Vec<f32> = Vec::new();
+        let mut stick_mount: Vec<f32> = Vec::new();
+        let mut stick_cap: Vec<f32> = Vec::new();
         // The party's sprites come from a texture of their own, so they travel in their own batch.
         let mut party_sprites: Vec<f32> = Vec::new();
         // The clean label atlas always travels in its own batch, because it is sampled with LINEAR.
@@ -1889,6 +1923,7 @@ impl RendererImpl {
         let style = touch_controls::overlay_style();
         let opacity = touch_controls::sprite_opacity();
         let appearance = crate::touch_appearance::settings();
+        let stick_offset = touch_controls::animated_movement_offset(appearance.animations);
         for (i, c) in touch_controls::controls().iter().enumerate() {
             if !touch_controls::is_active(i) {
                 continue
@@ -1970,18 +2005,22 @@ impl RendererImpl {
             let (jcx, jcy) = touch_controls::joystick_center_in_window(ww, wh);
             let (cx, cy) = (jcx * ww, jcy * wh);
             let r = touch_controls::joystick_radius() * wh;
-            let (ox, oy) = touch_controls::movement_offset();
+            let (ox, oy) = stick_offset;
             let mut drew_sprite = false;
-            // Moderno draws the joystick artwork, semi-transparent.
-            if appearance.style == crate::touch_appearance::Style::Modern {
+            // Artwork is for the joystick; D-pad mode keeps its drawn cross.
+            if appearance.style == crate::touch_appearance::Style::Modern
+                && touch_controls::move_mode() == touch_controls::MoveMode::Joystick {
                 if let (Some(base), Some(knob)) = (overlay.art("joystick"), overlay.art("joystick-knob")) {
                     let start = sprites.len();
                     let half = r * 1.05;
                     push_sprite(&mut sprites, ww, wh, cx - half, cy - half, cx + half, cy + half, base[0], base[1], base[2], base[3]);
-                    let (kx, ky) = (cx + ox * r * 0.72, cy + oy * r * 0.72);
+                    push_stick_mount(&mut stick_mount, ww, wh, cx, cy, r, ox, oy, appearance.tint);
+                    for v in stick_mount.chunks_exact_mut(8) { v[5] *= opacity; }
+                    let (kx, ky) = (cx + ox * r * 0.50, cy + oy * r * 0.50);
                     let kh = r * 0.88;
-                    push_sprite(&mut sprites, ww, wh, kx - kh, ky - kh, kx + kh, ky + kh, knob[0], knob[1], knob[2], knob[3]);
-                    for v in sprites[start..].chunks_exact_mut(8) {
+                    let (kw, kh) = (kh * (1.0 - 0.08*ox.abs()), kh * (1.0 - 0.08*oy.abs()));
+                    push_sprite(&mut stick_cap, ww, wh, kx - kw, ky - kh, kx + kw, ky + kh, knob[0], knob[1], knob[2], knob[3]);
+                    for v in sprites[start..].chunks_exact_mut(8).chain(stick_cap.chunks_exact_mut(8)) {
                         v[5] *= touch_controls::sprite_opacity();
                         if let Some(t) = appearance.tint {
                             v[2] *= t[0];
@@ -1993,6 +2032,7 @@ impl RendererImpl {
                 }
             }
             if !drew_sprite {
+                let start = verts.len();
                 push_modern_movement(
                     &mut verts,
                     ww,
@@ -2005,6 +2045,7 @@ impl RendererImpl {
                     touch_controls::move_mode() == touch_controls::MoveMode::Dpad,
                     appearance.tint,
                 );
+                for v in verts[start..].chunks_exact_mut(8) { v[5] *= opacity; }
             }
         }
 
@@ -2092,6 +2133,17 @@ impl RendererImpl {
                 gl.BindTexture(gl::TEXTURE_2D, overlay.skin);
                 gl.BufferData(gl::ARRAY_BUFFER, (sprites.len() * 4) as _, sprites.as_ptr().cast(), gl::STREAM_DRAW);
                 gl.DrawArrays(gl::TRIANGLES, 0, (sprites.len() / 8) as i32);
+            }
+            // Socket and shaft remain above the base and below the animated cap.
+            if !stick_mount.is_empty() {
+                gl.BindTexture(gl::TEXTURE_2D, overlay.white);
+                gl.BufferData(gl::ARRAY_BUFFER, (stick_mount.len()*4) as _, stick_mount.as_ptr().cast(), gl::STREAM_DRAW);
+                gl.DrawArrays(gl::TRIANGLES, 0, (stick_mount.len()/8) as i32);
+            }
+            if !stick_cap.is_empty() {
+                gl.BindTexture(gl::TEXTURE_2D, overlay.skin);
+                gl.BufferData(gl::ARRAY_BUFFER, (stick_cap.len()*4) as _, stick_cap.as_ptr().cast(), gl::STREAM_DRAW);
+                gl.DrawArrays(gl::TRIANGLES, 0, (stick_cap.len()/8) as i32);
             }
             if !label_sprites.is_empty() {
                 // The clean label atlas, sampled with LINEAR so the text stays smooth.

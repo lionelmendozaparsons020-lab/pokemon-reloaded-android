@@ -134,13 +134,10 @@ pub const CLASSIC_CONTROLS: &[Control] = &[
     Control { name: "alpha7", key: Key::Alpha7, shape: Shape::Circle { cx: 0.732, cy: 0.055, r: 0.020 }, label: Label::Text("7"), contexts: WORLD },
     Control { name: crate::field_controls::NAME, key: Key::Alpha1, shape: Shape::Circle { cx: 0.300, cy: 0.760, r: 0.038 }, label: Label::Text("SEL"), contexts: WORLD },
     // Menu / misc keys (second row along the top).
+    Control { name: "alpha8", key: Key::Alpha8, shape: Shape::Circle { cx: 0.228, cy: 0.050, r: 0.022 }, label: Label::Text("8"), contexts: WORLD },
     Control { name: "space", key: Key::Space, shape: Shape::Circle { cx: 0.300, cy: 0.145, r: 0.022 }, label: Label::Text("PKM"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: ROTATE_NAME, key: Key::Z, shape: Shape::Circle { cx: 0.935, cy: 0.150, r: 0.036 }, label: Label::Text("Girar"), contexts: 0 },
     Control { name: "f1", key: Key::F1, shape: Shape::Circle { cx: 0.935, cy: 0.300, r: 0.036 }, label: Label::Text("F1"), contexts: 0 },
-    Control { name: "box_z", key: Key::Z, shape: Shape::Circle { cx: 0.865, cy: 0.851, r: 0.033 }, label: Label::Text("Z"), contexts: 0 },
-    Control { name: "box_x", key: Key::X, shape: Shape::Circle { cx: 0.933, cy: 0.700, r: 0.033 }, label: Label::Text("X"), contexts: 0 },
-    Control { name: "box_s", key: Key::S, shape: Shape::Circle { cx: 0.712, cy: 0.700, r: 0.026 }, label: Label::Text("S"), contexts: 0 },
-    Control { name: "box_o", key: Key::O, shape: Shape::Circle { cx: 0.712, cy: 0.840, r: 0.026 }, label: Label::Text("O"), contexts: 0 },
     Control { name: "o", key: Key::O, shape: Shape::Circle { cx: 0.372, cy: 0.145, r: 0.022 }, label: Label::Text("O"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "m", key: Key::M, shape: Shape::Circle { cx: 0.444, cy: 0.145, r: 0.022 }, label: Label::Text("M"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "e", key: Key::E, shape: Shape::Circle { cx: 0.516, cy: 0.145, r: 0.022 }, label: Label::Text("E"), contexts: WORLD | BATTLE | SAFARI },
@@ -204,13 +201,10 @@ pub const NEW_CONTROLS: &[Control] = &[
     Control { name: "alpha5", key: Key::Alpha5, shape: Shape::Circle { cx: 0.516, cy: 0.055, r: 0.020 }, label: Label::Text("5"), contexts: WORLD | SAFARI },
     Control { name: "alpha7", key: Key::Alpha7, shape: Shape::Circle { cx: 0.588, cy: 0.055, r: 0.020 }, label: Label::Text("7"), contexts: WORLD | SAFARI },
     // Menu / misc keys (second row along the top).
+    Control { name: "alpha8", key: Key::Alpha8, shape: Shape::Circle { cx: 0.228, cy: 0.050, r: 0.022 }, label: Label::Text("8"), contexts: WORLD },
     Control { name: "space", key: Key::Space, shape: Shape::Circle { cx: 0.300, cy: 0.145, r: 0.022 }, label: Label::Text("PKM"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: ROTATE_NAME, key: Key::Z, shape: Shape::Circle { cx: 0.935, cy: 0.150, r: 0.036 }, label: Label::Text("Girar"), contexts: 0 },
     Control { name: "f1", key: Key::F1, shape: Shape::Circle { cx: 0.935, cy: 0.300, r: 0.036 }, label: Label::Text("F1"), contexts: 0 },
-    Control { name: "box_z", key: Key::Z, shape: Shape::Circle { cx: 0.865, cy: 0.851, r: 0.033 }, label: Label::Text("Z"), contexts: 0 },
-    Control { name: "box_x", key: Key::X, shape: Shape::Circle { cx: 0.933, cy: 0.700, r: 0.033 }, label: Label::Text("X"), contexts: 0 },
-    Control { name: "box_s", key: Key::S, shape: Shape::Circle { cx: 0.712, cy: 0.700, r: 0.026 }, label: Label::Text("S"), contexts: 0 },
-    Control { name: "box_o", key: Key::O, shape: Shape::Circle { cx: 0.712, cy: 0.840, r: 0.026 }, label: Label::Text("O"), contexts: 0 },
     Control { name: "o", key: Key::O, shape: Shape::Circle { cx: 0.372, cy: 0.145, r: 0.022 }, label: Label::Text("O"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "m", key: Key::M, shape: Shape::Circle { cx: 0.444, cy: 0.145, r: 0.022 }, label: Label::Text("M"), contexts: WORLD | BATTLE | SAFARI },
     Control { name: "e", key: Key::E, shape: Shape::Circle { cx: 0.516, cy: 0.145, r: 0.022 }, label: Label::Text("E"), contexts: WORLD | BATTLE | SAFARI },
@@ -692,6 +686,16 @@ pub fn dialogue_open() -> bool {
 /// the game's own click boxes, so nothing of the overlay is wanted there; the engine reports it from
 /// the game's `ENCAJA` global.
 static BOX_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static BOX_CARRYING: AtomicBool = AtomicBool::new(false);
+static BOX_RESTING_TARGET: AtomicBool = AtomicBool::new(false);
+pub fn set_box_interaction(carrying: bool, resting_target: bool) {
+    BOX_CARRYING.store(carrying, Ordering::Relaxed);
+    BOX_RESTING_TARGET.store(resting_target, Ordering::Relaxed);
+}
+pub fn box_carrying() -> bool { BOX_CARRYING.load(Ordering::Relaxed) }
+pub fn box_resting_target() -> bool { BOX_RESTING_TARGET.load(Ordering::Relaxed) }
+/// ENCAJA remains true in these rooms even though they require keyboard navigation.
+pub fn pokemon_details_open() -> bool { matches!(ROOM.load(Ordering::Relaxed), 5 | 6 | 7) }
 
 pub fn set_box_open(open: bool) {
     BOX_OPEN.store(open, Ordering::Relaxed);
@@ -806,11 +810,6 @@ pub fn current_context() -> u8 {
     if dialogue_open() {
         return DIALOG
     }
-    // The Pokémon box is entirely point-and-click, so nothing is needed next to it: no controls at
-    // all. MENU is the context no control belongs to, which is exactly that.
-    if box_open() {
-        return MENU
-    }
     // The system keyboard is up. It owns the bottom of the screen and the controls would sit under
     // it, so the whole overlay steps aside - buttons and joystick - until it is gone. Typing needs
     // no buttons, and the game's own dialogs are advanced with the keyboard's own key.
@@ -828,6 +827,10 @@ pub fn current_context() -> u8 {
     if modal_id() == LIST_MODAL || crate::touch_navigation::bag_open() {
         return MENU_NAV
     }
+    // In Datos / habilidades / movimientos the player still needs Z, X and movement.
+    if pokemon_details_open() { return MENU_NAV }
+    // Only the PC storage grid is fully mouse-driven; list modals were handled above.
+    if box_open() { return MENU }
     match ROOM.load(Ordering::Relaxed) {
         // IntroROOM, InicioROOM, CargarPartida, MultijugadorMenu, CreditosInicioScreen, OptionsROOM:
         // these screens are fully clickable (once the game's own click boxes are fixed, see
@@ -901,15 +904,11 @@ pub fn is_active(index: usize) -> bool {
     {
         return !pad_active() && !info_window_open()
     }
-    if matches!(controls()[index].name, "box_z" | "box_x" | "box_s" | "box_o") {
-        return box_open()
-            && !pad_active()
-            && !info_window_open()
-            && !layout_override(controls()[index].name).is_some_and(|entry| !entry.visible)
-    }
+    // Storage stays touch-driven, including saved upstream layouts.
+    if box_open() && current_context() == MENU { return false }
     let classic = overlay_style() == OverlayStyle::Classic;
     if classic {
-        if current_context() == WORLD && controls()[index].name.starts_with("alpha") { return false }
+        if current_context() == WORLD && matches!(controls()[index].name, "alpha1" | "alpha2" | "alpha3" | "alpha4" | "alpha5" | "alpha6" | "alpha7") { return false }
         if controls()[index].name == crate::field_controls::NAME && current_context() != WORLD { return false }
         if controls()[index].name == PARTY_NAME && current_context() != BATTLE { return false }
         if layout_override(controls()[index].name).is_some_and(|entry| !entry.visible) { return false }
@@ -1148,6 +1147,8 @@ pub const JOYSTICK_CY: f32 = 0.700;
 pub const JOYSTICK_R: f32 = 0.200;
 /// Dead zone, as a fraction of the radius, before a direction registers.
 pub const JOYSTICK_DEAD: f32 = 0.35;
+/// Only the touchscreen stick has a 10% activation threshold.
+pub const TOUCH_JOYSTICK_DEAD: f32 = crate::touch_stick::ACTIVATE;
 
 /// The movement control's centre, in normalised coordinates.
 pub fn movement_center() -> (f32, f32) {
@@ -1215,12 +1216,16 @@ pub fn movement_dirs(nx: f32, ny: f32, ww: f32, wh: f32) -> [bool; 4] {
             [dy < 0.0, dy > 0.0, false, false]
         }
     }
-    stick_dirs(dx, dy)
+    crate::touch_stick::directions(dx, dy, move_dirs())
 }
 
-/// Which directions a stick pushed by (dx, dy) is asking for: up, down, left, right. Both are in
-/// the range -1..1, and this is the same dead zone the on-screen joystick uses - a physical pad's
-/// stick goes through here too, so both feel identical.
+/// Eight equal directions; the touchscreen reacts at 10% travel without
+/// changing the larger physical-gamepad dead zone.
+pub fn touch_stick_dirs(dx: f32, dy: f32) -> [bool; 4] {
+    crate::touch_stick::directions(dx, dy, [false; 4])
+}
+
+/// Physical controllers preserve their original dead zone.
 pub fn stick_dirs(dx: f32, dy: f32) -> [bool; 4] {
     [
         dy < -JOYSTICK_DEAD,
@@ -1240,6 +1245,31 @@ pub fn set_movement_offset(dx: f32, dy: f32) {
 pub fn movement_offset() -> (f32, f32) {
     *MOVEMENT_OFFSET.lock().unwrap()
 }
+
+struct MovementVisual {
+    spring: crate::touch_stick::StickSpring,
+    frame: Option<std::time::Instant>,
+}
+static MOVEMENT_VISUAL: Mutex<MovementVisual> = Mutex::new(MovementVisual {
+    spring: crate::touch_stick::StickSpring::new(), frame: None,
+});
+
+/// Rendering only: input and key release never wait for this spring.
+pub fn animated_movement_offset(animate: bool) -> (f32, f32) {
+    let target = movement_offset();
+    let mut visual = MOVEMENT_VISUAL.lock().unwrap();
+    if !movement_active() || !animate {
+        visual.spring.reset();
+        visual.frame = None;
+        return if movement_active() { target } else { (0.0, 0.0) }
+    }
+    let now = std::time::Instant::now();
+    let dt = visual.frame.replace(now).map_or(1.0 / 60.0,
+        |last| now.saturating_duration_since(last).as_secs_f32());
+    if dt > 0.25 { visual.spring.reset(); }
+    visual.spring.step(target, dt.min(0.05))
+}
+
 
 /// Which directions the movement control is pressing right now, so the D-pad can light up the arm.
 static MOVE_DIRS: AtomicU32 = AtomicU32::new(0);

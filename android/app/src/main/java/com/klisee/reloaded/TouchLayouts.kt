@@ -9,7 +9,7 @@ enum class TouchProfile(val id: String, val title: String, val description: Stri
     CHOICE("choice", "Opciones", "Joystick y Z/X para responder las listas de opciones."),
     SAFARI("safari", "Safari", "Controles de captura en la Zona Safari."),
     MENU_NAV("menu_nav", "Navegación", "Mochila y listas: joystick, X, Z y gestos táctiles."),
-    MENU("menu", "Menús y caja", "Caja/PC: Z para el menú, X para salir, S para ver y O para soltar."),
+    MENU("menu", "Menús y caja", "Caja/PC táctil: tocá para seleccionar, arrastrá para mover y mantené un segundo para abrir el menú."),
 }
 
 data class TouchControlSpec(
@@ -45,6 +45,7 @@ object TouchLayouts {
         TouchControlSpec("alpha5", "5", 0.588f, 0.055f, 0.020f, setOf(TouchProfile.SAFARI), null, aspect = 1.000000f),
         TouchControlSpec("alpha6", "6", 0.660f, 0.055f, 0.020f, setOf(TouchProfile.SAFARI), null, aspect = 1.000000f),
         TouchControlSpec("alpha7", "7", 0.732f, 0.055f, 0.020f, setOf(TouchProfile.WORLD), null),
+        TouchControlSpec("alpha8", "8", 0.228f, 0.050f, 0.022f, setOf(TouchProfile.WORLD), "alpha8.png"),
         TouchControlSpec("sel_world", "SEL", 0.300f, 0.760f, 0.038f, setOf(TouchProfile.WORLD), "sel_world.png"),
         TouchControlSpec("space", "PKM", 0.300f, 0.145f, 0.022f, setOf(TouchProfile.WORLD, TouchProfile.BATTLE, TouchProfile.SAFARI), "space.png", aspect = 1.000000f),
         TouchControlSpec("o", "O", 0.372f, 0.145f, 0.022f, setOf(TouchProfile.WORLD, TouchProfile.BATTLE, TouchProfile.SAFARI), "o.png", aspect = 1.000000f),
@@ -70,10 +71,6 @@ object TouchLayouts {
         TouchControlSpec("eleccion_ok", "OK", 0.932f, 0.600f, 0.036f, setOf(TouchProfile.CHARACTER), "eleccion_ok.png", aspect = 1.900000f),
         TouchControlSpec("eleccion_atras", "X", 0.972f, 0.420f, 0.028f, setOf(TouchProfile.CHARACTER), "eleccion_atras.png", aspect = 1.000000f),
         TouchControlSpec("truco_ctrl_p", "C+P", 0.500f, 0.060f, 0.018f, setOf(TouchProfile.CHARACTER), "truco_ctrl_p.png", aspect = 7.625000f),
-        TouchControlSpec("box_z", "Z", 0.865f, 0.851f, 0.033f, setOf(TouchProfile.MENU), null, aspect = 1.000000f),
-        TouchControlSpec("box_x", "X", 0.933f, 0.700f, 0.033f, setOf(TouchProfile.MENU), null, aspect = 1.000000f),
-        TouchControlSpec("box_s", "S", 0.712f, 0.700f, 0.026f, setOf(TouchProfile.MENU), null, aspect = 1.000000f),
-        TouchControlSpec("box_o", "O", 0.712f, 0.840f, 0.026f, setOf(TouchProfile.MENU), null, aspect = 1.000000f),
         TouchControlSpec("joystick", "Joystick", .135f, .700f, .200f,
             setOf(TouchProfile.WORLD, TouchProfile.BATTLE, TouchProfile.CHOICE, TouchProfile.MENU_NAV), "joystick-base.png", joystick = true),
         // Optional keys: empty profiles means "not part of any profile by default". The editor
@@ -88,10 +85,8 @@ object TouchLayouts {
         TouchControlSpec("k", "K", .5f, .5f, .028f, emptySet(), null),
     )
     fun key(profile: TouchProfile, spec: TouchControlSpec) = "${profile.id}/${spec.id}"
-    fun availableFor(profile: TouchProfile) = if (profile == TouchProfile.MENU)
-        controls.filter { TouchProfile.MENU in it.profiles || it.profiles.isEmpty() }
-    else
-        controls.filter { (!it.joystick || profile in it.profiles) && !(profile == TouchProfile.WORLD && it.id.startsWith("alpha")) && (it.id != "sel_world" || profile == TouchProfile.WORLD) && (it.id != "pkmn" || profile == TouchProfile.BATTLE) }
+    fun availableFor(profile: TouchProfile) = if (profile == TouchProfile.MENU) emptyList() else
+        controls.filter { (!it.joystick || profile in it.profiles) && !(profile == TouchProfile.WORLD && it.id in setOf("alpha1", "alpha2", "alpha3", "alpha4", "alpha5", "alpha6", "alpha7")) && (it.id != "sel_world" || profile == TouchProfile.WORLD) && (it.id != "pkmn" || profile == TouchProfile.BATTLE) }
     fun controlsFor(profile: TouchProfile, values: Map<String, TouchPlacement> = emptyMap()) =
         availableFor(profile).filter { profile in it.profiles || key(profile, it) in values }
     fun added(profile: TouchProfile, spec: TouchControlSpec) = profile !in spec.profiles
@@ -116,10 +111,6 @@ object TouchLayouts {
         "battle/m" to TouchPlacement(0.860f, 0.330f),
         "battle/a" to TouchPlacement(0.755f, 0.448f),
         "battle/s" to TouchPlacement(0.700f, 0.650f),
-        "menu/box_z" to TouchPlacement(0.865f, 0.851f),
-        "menu/box_x" to TouchPlacement(0.933f, 0.700f),
-        "menu/box_s" to TouchPlacement(0.712f, 0.700f),
-        "menu/box_o" to TouchPlacement(0.712f, 0.840f),
     )
     fun original(spec: TouchControlSpec, profile: TouchProfile = TouchProfile.WORLD) =
         profileDefaults[key(profile, spec)] ?: TouchPlacement(spec.x, spec.y)

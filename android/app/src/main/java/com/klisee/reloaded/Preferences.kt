@@ -220,36 +220,18 @@ class Preferences(context: Context) {
 
     fun touchLayouts(): Map<String, TouchPlacement> {
         val values = TouchLayouts.parse(prefs.getString("touchLayoutV1", TouchLayouts.HEADER).orEmpty()).toMutableMap()
-        // One-time: X joins Z on the same row, as at the start of the game. Forced on update.
-        if (!prefs.getBoolean("touchXZLayoutV1", false)) {
-            values["world/z"] = TouchPlacement(0.865f, 0.851f)
-            values["world/x"] = TouchPlacement(0.933f, 0.851f)
-            prefs.edit().putBoolean("touchXZLayoutV1", true)
-                .putString("touchLayoutV1", TouchLayouts.encode(values)).apply()
-        }
-        // One-time: the Navigation profile also gets X and Z together.
-        if (!prefs.getBoolean("touchXZMenuV1", false)) {
-            values["menu_nav/z"] = TouchPlacement(0.865f, 0.851f)
-            values["menu_nav/x"] = TouchPlacement(0.933f, 0.851f)
-            prefs.edit().putBoolean("touchXZMenuV1", true)
-                .putString("touchLayoutV1", TouchLayouts.encode(values)).apply()
-        }
-        // One-time: final default is the game's diagonal, X above-right of Z.
+        // Migrate only missing defaults; never overwrite a user's placement.
         if (!prefs.getBoolean("touchXZDiagonalV1", false)) {
-            values["world/z"] = TouchPlacement(0.865f, 0.851f)
-            values["world/x"] = TouchPlacement(0.933f, 0.700f)
-            values["menu_nav/z"] = TouchPlacement(0.865f, 0.851f)
-            values["menu_nav/x"] = TouchPlacement(0.933f, 0.700f)
-            prefs.edit().putBoolean("touchXZDiagonalV1", true)
-                .putString("touchLayoutV1", TouchLayouts.encode(values)).apply()
-        }
-        // Forced: cajas/PC get their Z/X/S/O buttons even on custom layouts.
-        if (!prefs.getBoolean("touchBoxLayoutV1", false)) {
-            values["menu/box_z"] = TouchPlacement(0.865f, 0.851f)
-            values["menu/box_x"] = TouchPlacement(0.933f, 0.700f)
-            values["menu/box_s"] = TouchPlacement(0.712f, 0.700f)
-            values["menu/box_o"] = TouchPlacement(0.712f, 0.840f)
-            prefs.edit().putBoolean("touchBoxLayoutV1", true)
+            for (profile in listOf(TouchProfile.WORLD, TouchProfile.MENU_NAV)) {
+                for (id in listOf("z", "x")) {
+                    val key = "${profile.id}/$id"
+                    if (key !in values) values[key] = TouchPlacement(
+                        if (id == "z") .865f else .933f,
+                        if (id == "z") .851f else .700f)
+                }
+            }
+            prefs.edit().putBoolean("touchXZLayoutV1", true)
+                .putBoolean("touchXZMenuV1", true).putBoolean("touchXZDiagonalV1", true)
                 .putString("touchLayoutV1", TouchLayouts.encode(values)).apply()
         }
         if (prefs.getBoolean("battleTopLayoutV1", false)) return values

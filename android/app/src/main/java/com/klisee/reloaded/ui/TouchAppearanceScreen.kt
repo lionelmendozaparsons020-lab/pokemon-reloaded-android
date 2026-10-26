@@ -60,7 +60,7 @@ fun TouchAppearanceScreen(prefs: Preferences, onBack: () -> Unit) {
                     onClick={update(appearance.copy(style=style))}, label={Text(style.title)},
                     modifier=Modifier.testTag("style-${style.id}"))
             }
-            Text("Moderno usa los sprites semitransparentes; Clasico, los botones suaves con anillos.",style=MaterialTheme.typography.bodySmall)
+            Text("Moderno mantiene el aspecto original; Moderno V2 usa el pack de sprites importado; Clásico usa botones con anillos.",style=MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { context.startActivity(android.content.Intent(context, TouchAssetsActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Cambiar sprites · Importar y exportar")
             }
@@ -172,7 +172,7 @@ internal fun DrawScope.drawControl(spec:TouchControlSpec,g:TouchGeometry,appeara
     val radius=g.radius*scale;val halfWidth=g.halfWidth*scale;val center=Offset(g.x,g.y)
     val sprite = images["custom/"+spec.id] ?: spec.asset?.let { images[it] }
     // Moderno: the artwork we already had.
-    if (appearance.style == TouchStyle.MODERN && sprite != null) {
+    if (appearance.style != TouchStyle.CLASSIC && sprite != null) {
         drawImage(sprite,dstOffset=IntOffset((g.x-halfWidth).roundToInt(),(g.y-radius).roundToInt()),
             dstSize=IntSize((halfWidth*2).roundToInt().coerceAtLeast(1),(radius*2).roundToInt().coerceAtLeast(1)),
             alpha=alpha,filterQuality=FilterQuality.None,
