@@ -3,6 +3,8 @@ package com.klisee.reloaded
 import android.content.Context
 import java.io.File
 import android.net.Uri
+import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
 
@@ -72,7 +74,23 @@ object ModernoV2Sprites {
                             require(img.size > 8 && img.take(8).toByteArray().contentEquals(signature)) {
                                 "Sprite PNG inválido: $mapped"
                             }
-                            found[mapped] = img
+                            found[mapped] = if (mapped == "joystick-base.png") {
+                                // The supplied joystick is 1254px wide. Normalize only
+                                // this base to fit the engine's 2048px texture atlas.
+                                val bitmap = BitmapFactory.decodeByteArray(img, 0, img.size)
+                                    ?: error("Joystick PNG inválido")
+                                if (maxOf(bitmap.width, bitmap.height) > 512) {
+                                    val scaled = Bitmap.createScaledBitmap(bitmap, 384, 384, true)
+                                    val output = ByteArrayOutputStream()
+                                    scaled.compress(Bitmap.CompressFormat.PNG, 100, output)
+                                    scaled.recycle()
+                                    bitmap.recycle()
+                                    output.toByteArray()
+                                } else {
+                                    bitmap.recycle()
+                                    img
+                                }
+                            } else img
                         }
                     }
                     zip.closeEntry()
