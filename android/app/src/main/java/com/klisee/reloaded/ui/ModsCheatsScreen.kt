@@ -175,33 +175,18 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 }
             }
 
-            Text("Mods dentro del juego · Beta 1.9.2.2", style = MaterialTheme.typography.titleLarge)
+            Text("Aviso de seguridad", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Con F3 activado, iniciá el juego y escribí uno de estos códigos en el cuadro de trucos. " +
-                    "Usalos solo en una partida de prueba después de crear un respaldo.",
+                "Los comandos experimentales RAD100K y RADITEM están desactivados. " +
+                    "El juego detectó una anomalía 10551 al utilizarlos y terminó la sesión. " +
+                    "No guardes una partida después de recibir ese aviso.",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Text("RAD100K — agrega hasta 100.000 de dinero (límite 999.999).")
-            Text("RADITEM — añade 10 unidades del objeto Poké Ball con ID 1.")
-            Text("RADITEM1X10 — añade 10 unidades del objeto con ID 1.")
-            Text("RADITEM13X99 — añade 99 unidades del objeto con ID 13.")
             Text(
-                "El formato es RADITEM + ID + X + CANTIDAD. Se permiten IDs 1–821, " +
-                    "solo Poké Balls u objetos comunes, y cantidades de 1 a 99. " +
-                    "Los códigos actúan directamente, SIN abrir una segunda ventana o diálogo.",
+                "El botón F3 sigue disponible para los trucos oficiales del juego. " +
+                    "Primero creá un respaldo. Esta versión no altera el formato de las partidas " +
+                    "ni desactiva las comprobaciones del juego.",
                 style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                "Se usan funciones internas que actualizan las comprobaciones del juego. " +
-                    "El uso queda registrado y la compatibilidad con partidas modificadas no está garantizada.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text("Editor avanzado", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "Generador de Pokémon, shinies, IV y movimientos: pendiente de validación. " +
-                    "Los mods disponibles no editan archivos .savc externamente, " +
-                    "ni desactivan la protección del juego o alteran eventos de la historia.",
-                style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.padding(bottom = BottomNavSpace))
         }
