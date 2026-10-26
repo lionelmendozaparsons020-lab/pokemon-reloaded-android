@@ -155,6 +155,28 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                 1,
             ))
         },
+        // In an isolated Mods save, event Pokémon can have been caught via
+        // the native wild-encounter system before their corresponding quest.
+        // The original PrCheck loops over 108 story/event conditions and
+        // rejects such captures. Ignore ONLY a mismatch accounted for by a
+        // genuinely captured species in the Pokédex, and leave unrelated
+        // event-state checks, the Master Ball check, and save checksums intact.
+        "PrCheck" if MOD_MODE.load(Ordering::Relaxed) => {
+            const EVENT_CHECK: &str = "if(ex(6970,jd)){";
+            if !source.contains("for(jd=1;jd<=(108);jd+=1)")
+                || !source.contains(EVENT_CHECK)
+                || !source.contains("pd=ex(5432,jd);")
+                || !source.contains("ex(9669,ex(9876,ex(9863,6844),string(jd),string(pd)))")
+                || !source.contains("if(!ex(5717)){")
+                || !source.contains("if(ch=0){ ex(8164,6559208);}") {
+                return None;
+            }
+            Some(source.replacen(
+                EVENT_CHECK,
+                "if(ex(6970,jd) && !ex(9500,ex(5432,jd))){",
+                1,
+            ))
+        },
         // Reloaded limits Master Balls held/used to those awarded by story
         // events. CodMb reports "Corrupción D...H..." even if the ball
         // inventory and serialized save are internally consistent. Allow the
@@ -229,6 +251,22 @@ mod tests {
         assert!(patched.contains("global.pkmn2[POS]+=1000"));
         assert!(patched.contains("global.selue_pk2[POS]=ex(7718"));
         assert!(fixup("IniciaSalvaje", "other game version").is_none());
+        set_mod_mode(false);
+    }
+
+
+    #[test]
+    fn mod_profile_allows_early_captures_of_any_catalogued_event_pokemon() {
+        let original = r#"var ch,pr,jd,pd; ch=1; for(jd=1;jd<=(108);jd+=1){ if(ex(6970,jd)){ pd=ex(5432,jd); ex(9669,ex(9876,ex(9863,6844),string(jd),string(pd))); ch=0;}} if(!ex(5717)){ ch=0;} if(ch=0){ ex(8164,6559208);} return ch;"#;
+        set_mod_mode(false);
+        assert!(fixup("PrCheck", original).is_none(), "normal saves keep official checks");
+        set_mod_mode(true);
+        let patched = fixup("PrCheck", original).expect("expected event check fixup");
+        assert!(patched.contains("if(ex(6970,jd) && !ex(9500,ex(5432,jd))){"));
+        assert!(patched.contains("for(jd=1;jd<=(108);jd+=1)"));
+        assert!(patched.contains("if(!ex(5717)){"));
+        assert!(patched.contains("if(ch=0){ ex(8164,6559208);}"));
+        assert!(fixup("PrCheck", "incompatible game build").is_none());
         set_mod_mode(false);
     }
 
