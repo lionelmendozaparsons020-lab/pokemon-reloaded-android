@@ -67,7 +67,33 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
                     exit;
                 }
             "#;
-            Some(source.replacen(F3, &format!("{}{}", F3, ACTIONS), 1))
+
+            // A native encounter is considerably safer than editing encrypted
+            // party/box fields; normal capture persists all checksums & metadata.
+            const POKEMON: &str = r#"
+                if(string_copy(cheat,1,5)="RADPK"){
+                    if(!instance_exists((16)) || !instance_exists((14)))exit;
+                    txt1=string_copy(cheat,6,string_length(cheat)-5);
+                    H=string_pos("X",txt1);
+                    if(H<=1 || H>=string_length(txt1))exit;
+                    txt2=string_copy(txt1,1,H-1);
+                    str=string_copy(txt1,H+1,string_length(txt1)-H);
+                    if(string_digits(txt2)!=txt2 || string_digits(str)!=str)exit;
+                    pk=real(txt2);
+                    nv=real(str);
+                    if(pk<1 || pk>1025 || nv<1 || nv>100)exit;
+                    if(ex(7788,pk)<=0)exit;
+                    if(instance_exists((17)) || instance_exists((386)))exit;
+                    with((16)){
+                        ex(8038,pk,nv,0);
+                        global.lugar=room;
+                        instance_create(0,0,(386));
+                        global.numcheats+=1;
+                    }
+                    exit;
+                }
+            "#;
+            Some(source.replacen(F3, &format!("{}{}{}", F3, ACTIONS, POKEMON), 1))
         },
         // Reloaded limits Master Balls held/used to those awarded by story
         // events. CodMb reports "Corrupción D...H..." even if the ball
@@ -110,6 +136,8 @@ mod tests {
         assert!(changed.contains("with((16))"));
         assert!(changed.contains("ex(8963,i,j)"));
         assert!(changed.contains("ex(7736,min("));
+        assert!(changed.contains("ex(8038,pk,nv,0)"));
+        assert!(changed.contains("instance_create(0,0,(386))"));
         assert!(fixup("ExecuteCheat", "wrong edition").is_none());
         set_mod_mode(false);
     }

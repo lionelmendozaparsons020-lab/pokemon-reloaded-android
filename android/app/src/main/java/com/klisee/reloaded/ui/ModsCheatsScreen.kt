@@ -19,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -58,6 +59,8 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
     var officialF3 by remember { mutableStateOf(mods.showOfficialF3) }
     var isolatedMode by remember { mutableStateOf(mods.modMode) }
     var backups by remember { mutableStateOf(mods.backups()) }
+    var pokemonId by remember { mutableStateOf("25") }
+    var pokemonLevel by remember { mutableStateOf("10") }
     var busy by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf<File?>(null) }
 
@@ -179,6 +182,50 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+
+            Text("Añadir Pokémon · Encuentro", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Elegí especie y nivel. Modo Mods prepara un encuentro salvaje para capturarlo " +
+                    "con las funciones originales del juego, sin editar directamente tu equipo o tus cajas.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = pokemonId,
+                    onValueChange = { pokemonId = it.filter { ch -> ch.isDigit() }.take(4) },
+                    label = { Text("ID Pokémon") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = pokemonLevel,
+                    onValueChange = { pokemonLevel = it.filter { ch -> ch.isDigit() }.take(3) },
+                    label = { Text("Nivel") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text("Ejemplos: Bulbasaur 1 · Charizard 6 · Pikachu 25 · Eevee 133 · Mewtwo 150 · Lucario 448.",
+                style = MaterialTheme.typography.bodySmall)
+            val pokemonCode = "RADPK" + pokemonId + "X" + pokemonLevel
+            Button(
+                enabled = isolatedMode && pokemonId.toIntOrNull() in 1..1025 &&
+                    pokemonLevel.toIntOrNull() in 1..100 && pokemonCode.length <= 13,
+                onClick = {
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Código Pokémon", pokemonCode))
+                    scope.launch { snackbar.showSnackbar("Copiado: $pokemonCode. Pegalo en F3 mientras explorás.") }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Copiar código: $pokemonCode") }
+            Text(
+                "Requiere Modo Mods y F3 activados. Al explorar, introducí el código en F3 " +
+                    "para iniciar un encuentro y capturarlo de forma normal. " +
+                    "Solo funciona con especies válidas. No guardes si aparece una anomalía.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
             Text("Los cambios de modo se aplican al volver a iniciar el juego.", style = MaterialTheme.typography.bodySmall)
 
             Text("Protección de partidas", style = MaterialTheme.typography.titleLarge)

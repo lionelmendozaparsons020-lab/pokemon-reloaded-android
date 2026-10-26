@@ -51,4 +51,14 @@ world joystick 0.15 0.65 0.8 1
             assertTrue(a.y - a.radius >= 0f)
         }
     }
+    @org.junit.Test
+    fun modernV2PersistsAsSeparateStyle() {
+        val v2 = com.klisee.reloaded.TouchAppearance(style = com.klisee.reloaded.TouchStyle.MODERN_V2)
+        assertEquals("modern_v2", v2.style.id)
+        assertEquals(com.klisee.reloaded.TouchStyle.MODERN_V2,
+            com.klisee.reloaded.TouchAppearance.parse(v2.encode()).style)
+        assertEquals(com.klisee.reloaded.TouchStyle.MODERN,
+            com.klisee.reloaded.TouchAppearance.parse(com.klisee.reloaded.TouchAppearance().encode()).style)
+    }
+
 }
