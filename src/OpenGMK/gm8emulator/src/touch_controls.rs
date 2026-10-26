@@ -1060,7 +1060,8 @@ pub fn set_move_mode(mode: MoveMode) {
 
 pub fn move_mode() -> MoveMode {
     // Moderno always moves with the joystick; the choice only exists for the classic look.
-    if crate::touch_appearance::settings().style == crate::touch_appearance::Style::Modern {
+    if matches!(crate::touch_appearance::settings().style,
+        crate::touch_appearance::Style::Modern | crate::touch_appearance::Style::ModernV2) {
         return MoveMode::Joystick
     }
     if MOVE.load(Ordering::Relaxed) == 1 {
