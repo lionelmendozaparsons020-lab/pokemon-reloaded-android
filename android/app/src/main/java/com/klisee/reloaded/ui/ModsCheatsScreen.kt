@@ -209,8 +209,8 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall)
             val pokemonCode = "RADPK" + pokemonId + "X" + pokemonLevel
             Button(
-                enabled = isolatedMode && pokemonId.toIntOrNull() in 1..1025 &&
-                    pokemonLevel.toIntOrNull() in 1..100 && pokemonCode.length <= 13,
+                enabled = isolatedMode && (pokemonId.toIntOrNull() ?: 0) in 1..1025 &&
+                    (pokemonLevel.toIntOrNull() ?: 0) in 1..100 && pokemonCode.length <= 13,
                 onClick = {
                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
                         as android.content.ClipboardManager
