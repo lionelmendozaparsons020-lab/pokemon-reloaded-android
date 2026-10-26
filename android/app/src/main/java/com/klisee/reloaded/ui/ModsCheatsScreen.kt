@@ -166,6 +166,13 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                 Text("RAD100K — entrega hasta 100.000 de dinero.")
                 Text("RADITEM — entrega 10 unidades del objeto ID 1.")
                 Text("RADITEM1X12 — entrega 12 unidades del objeto ID 1.")
+                Text("RADITEM4X10 — prueba 10 Master Balls en la partida experimental.")
+                Text(
+                    "Corrección experimental: al cargar, Modo Mods admite Master Balls " +
+                        "adicionales sin alterar los verificadores generales del guardado. " +
+                        "Probalo solo con respaldo y no guardes ante otra anomalía.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Text(
                     "RADITEM + ID + X + cantidad (máximo 99); solo objetos comunes y Poké Balls. " +
                         "Estos comandos están disponibles únicamente dentro de Modo Mods.",
