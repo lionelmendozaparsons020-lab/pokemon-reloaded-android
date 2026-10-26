@@ -79,13 +79,39 @@ class GameRepository(private val context: Context) {
     private fun versionFromName(name: String): String? =
         Regex("""\d+\.\d+(?:\.\d+){1,2}""").find(name)?.value
 
+    /** Delete installed assets without following save-profile symlinks. */
+    private fun deleteTreeSafely(root: File): Boolean = runCatching {
+        val path = root.toPath()
+        if (!java.nio.file.Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return@runCatching
+        java.nio.file.Files.walkFileTree(
+            path,
+            object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                override fun visitFile(
+                    file: java.nio.file.Path,
+                    attrs: java.nio.file.attribute.BasicFileAttributes,
+                ): java.nio.file.FileVisitResult {
+                    java.nio.file.Files.deleteIfExists(file)
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+                override fun postVisitDirectory(
+                    dir: java.nio.file.Path,
+                    error: java.io.IOException?,
+                ): java.nio.file.FileVisitResult {
+                    if (error != null) throw error
+                    java.nio.file.Files.deleteIfExists(dir)
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+            },
+        )
+    }.isSuccess
+
     /** Frees the extracted game and any half-finished install, leaving the launcher ready again. */
     suspend fun deleteGame() = withContext(Dispatchers.IO) {
-        gameDir.deleteRecursively()
+        deleteTreeSafely(gameDir)
         metaFile.delete()
-        File(files, "game.staging").deleteRecursively()
-        File(files, "game.old").deleteRecursively()
-        File(files, "game.saves").deleteRecursively()
+        deleteTreeSafely(File(files, "game.staging"))
+        deleteTreeSafely(File(files, "game.old"))
+        deleteTreeSafely(File(files, "game.saves"))
         Unit
     }
 
@@ -98,21 +124,21 @@ class GameRepository(private val context: Context) {
         val staging = File(files, "game.staging")
         val previous = File(files, "game.old")
         if (looksLikeGame(gameDir)) {
-            staging.deleteRecursively()
-            previous.deleteRecursively()
+            deleteTreeSafely(staging)
+            deleteTreeSafely(previous)
             return
         }
         // A `game` folder without an exe or data is a leftover, not an install; it must not block
         // the complete extraction (or the previous game) waiting beside it.
-        if (gameDir.exists()) gameDir.deleteRecursively()
+        if (gameDir.exists()) deleteTreeSafely(gameDir)
         if (looksLikeGame(staging) && staging.renameTo(gameDir)) {
             trace("install: recuperada una extraccion completa de game.staging")
-            previous.deleteRecursively()
+            deleteTreeSafely(previous)
         } else if (looksLikeGame(previous) && previous.renameTo(gameDir)) {
             trace("install: restaurado el juego anterior desde game.old")
         } else {
-            staging.deleteRecursively()
-            previous.deleteRecursively()
+            deleteTreeSafely(staging)
+            deleteTreeSafely(previous)
         }
     }
 
@@ -292,7 +318,12 @@ class GameRepository(private val context: Context) {
                         val target = File(data, name)
                         // Only the save folders, and never a path that escapes them.
                         val wanted = saveFolders.any { name.startsWith("$it/") }
-                        val safe = target.canonicalPath.startsWith(data.canonicalPath + File.separator)
+                        val category = name.substringBefore("/")
+                        val permittedRoot = File(data, category).canonicalFile
+                        val privateRoot = context.filesDir.canonicalFile
+                        val safe = wanted &&
+                            permittedRoot.path.startsWith(privateRoot.path + File.separator) &&
+                            target.canonicalPath.startsWith(permittedRoot.path + File.separator)
                         if (!entry.isDirectory && wanted && safe) {
                             target.parentFile?.mkdirs()
                             target.outputStream().use { zip.copyTo(it) }
@@ -535,7 +566,7 @@ class GameRepository(private val context: Context) {
         val staging = File(files, "game.staging")
         if (staging.exists()) {
             log("Limpiando una extracción anterior…")
-            if (!staging.deleteRecursively()) error("No pude limpiar ${staging.absolutePath}.")
+            if (!deleteTreeSafely(staging)) error("No pude limpiar ${staging.absolutePath}.")
         }
 
         // The saves are copied aside during the swap, so their size also has to fit.
@@ -567,7 +598,7 @@ class GameRepository(private val context: Context) {
             log("Verificación correcta.")
 
             log("Conservando partidas y datos del jugador…")
-            if (!saved.deleteRecursively() && saved.exists()) {
+            if (!deleteTreeSafely(saved) && saved.exists()) {
                 error("No pude preparar ${saved.absolutePath}.")
             }
             var kept = 0
@@ -585,7 +616,7 @@ class GameRepository(private val context: Context) {
 
             log("Instalando (reemplazo atómico)…")
             val previous = File(files, "game.old")
-            if (!previous.deleteRecursively() && previous.exists()) {
+            if (!deleteTreeSafely(previous) && previous.exists()) {
                 error("No pude limpiar ${previous.absolutePath}; no he tocado el juego actual.")
             }
             val hadGame = gameDir.isDirectory
@@ -596,17 +627,17 @@ class GameRepository(private val context: Context) {
                 val restored = if (!hadGame) {
                     true
                 } else {
-                    gameDir.deleteRecursively()
+                    deleteTreeSafely(gameDir)
                     previous.renameTo(gameDir)
                 }
-                staging.deleteRecursively()
-                saved.deleteRecursively()
+                deleteTreeSafely(staging)
+                deleteTreeSafely(saved)
                 error(
                     if (restored) "No pude instalar el juego nuevo; se ha restaurado el anterior."
                     else "No pude instalar el juego nuevo ni restaurar el anterior. Reinicia la app.",
                 )
             }
-            if (hadGame && !previous.deleteRecursively() && previous.exists()) {
+            if (hadGame && !deleteTreeSafely(previous) && previous.exists()) {
                 log("Aviso: no pude borrar ${previous.absolutePath}; se limpiará en el próximo arranque.")
             }
             onProgress(98)
@@ -619,7 +650,7 @@ class GameRepository(private val context: Context) {
                 to.mkdirs()
                 runCatching { from.copyRecursively(to, overwrite = false) }
             }
-            saved.deleteRecursively()
+            deleteTreeSafely(saved)
 
             runCatching {
                 metaFile.writeText(
@@ -638,8 +669,8 @@ class GameRepository(private val context: Context) {
             if (e is StorageStalled) {
                 log("El almacenamiento no responde; dejo ${staging.name} para limpiarlo al reiniciar.")
             } else {
-                staging.deleteRecursively()
-                saved.deleteRecursively()
+                deleteTreeSafely(staging)
+                deleteTreeSafely(saved)
             }
             throw e
         }

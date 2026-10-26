@@ -11,6 +11,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.zip.CRC32
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+import java.util.zip.ZipEntry
 
 /**
  * Opt-in access to Pokémon Reloaded's BUILT-IN F3 cheats and local save backups.
@@ -22,6 +24,8 @@ import java.util.zip.ZipFile
 class ModSupport(private val context: Context) {
     private val settings = context.getSharedPreferences("mods", Context.MODE_PRIVATE)
     private val backupsDir: File get() = File(context.filesDir, "mods_backups")
+    private val currentProfile: String get() = if (modMode) "mods" else "normal"
+    private val savesProfileDir: File get() = File(context.filesDir, "save_modes/$currentProfile")
 
     var showOfficialF3: Boolean
         get() = settings.getBoolean("officialF3", false)
@@ -60,7 +64,12 @@ class ModSupport(private val context: Context) {
 
     fun backups(): List<File> =
         backupsDir.listFiles()
-            ?.filter { it.isFile && it.name.startsWith("respaldo_") && it.extension == "zip" }
+            ?.filter {
+                val prefix = "respaldo_${currentProfile}_"
+                val legacy = !modMode && it.name.startsWith("respaldo_") &&
+                    !it.name.startsWith("respaldo_mods_")
+                it.isFile && it.extension == "zip" && (it.name.startsWith(prefix) || legacy)
+            }
             ?.sortedByDescending { it.name }
             .orEmpty()
 
@@ -73,16 +82,20 @@ class ModSupport(private val context: Context) {
         runCatching {
             check(!GameSession.active) { "Cerrá primero el juego para crear un respaldo consistente." }
             check(repo.status() is GameRepository.Status.Ready) { "Instalá el juego primero." }
-            val source = repo.exportSaves().getOrThrow()
             check(backupsDir.isDirectory || backupsDir.mkdirs()) {
                 "No se pudo crear la carpeta de respaldos."
             }
-            val name = "respaldo_" +
+            val name = "respaldo_${currentProfile}_" +
                 SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date()) + ".zip"
             val finished = File(backupsDir, name)
             val partial = File(backupsDir, name + ".partial")
             try {
-                source.copyTo(partial, overwrite = false)
+                if (savesProfileDir.isDirectory) {
+                    writeProfileZip(savesProfileDir, partial)
+                } else {
+                    check(!modMode) { "Abrí Modo Mods una vez para crear su copia de partidas." }
+                    repo.exportSaves().getOrThrow().copyTo(partial, overwrite = false)
+                }
                 verifyArchive(partial)
                 check(partial.renameTo(finished)) { "No se pudo guardar el respaldo." }
                 finished
@@ -104,10 +117,71 @@ class ModSupport(private val context: Context) {
             verifyArchive(backup)
             val data = File(context.filesDir, "game/data")
             val currentFiles = listOf("partidas", "equipos", "char_custom").any { folder ->
-                File(data, folder).walkTopDown().any { it.isFile }
+                val root = if (savesProfileDir.isDirectory) savesProfileDir else data
+                File(root, folder).walkTopDown().any { it.isFile }
             }
             if (currentFiles) createBackup(repo).getOrThrow()
-            repo.importSaves(Uri.fromFile(backup)).getOrThrow()
+            if (savesProfileDir.isDirectory) {
+                restoreProfileZip(backup, savesProfileDir)
+            } else {
+                check(!modMode) { "Abrí Modo Mods una vez para crear sus carpetas." }
+                repo.importSaves(Uri.fromFile(backup)).getOrThrow()
+            }
+        }
+    }
+
+    /** A backup always represents the selected profile, not the last one played. */
+    private fun writeProfileZip(profile: File, output: File) {
+        var count = 0
+        ZipOutputStream(output.outputStream().buffered()).use { zip ->
+            for (folder in listOf("partidas", "equipos", "char_custom")) {
+                val root = File(profile, folder)
+                if (!root.isDirectory) continue
+                for (file in root.walkTopDown().filter { it.isFile }) {
+                    check(file.canonicalPath.startsWith(root.canonicalPath + File.separator))
+                    zip.putNextEntry(ZipEntry("$folder/" + file.relativeTo(root).invariantSeparatorsPath))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                    count++
+                }
+            }
+        }
+        check(count > 0) { "Todavía no hay partidas en este modo." }
+    }
+
+    /** Stage and atomically replace only the selected profile after validation. */
+    private fun restoreProfileZip(archive: File, profile: File): Int {
+        val stage = File(profile.parentFile, profile.name + ".restore_staging")
+        val previous = File(profile.parentFile, profile.name + ".before_restore")
+        check(!stage.exists() && !previous.exists()) { "Hay una restauración anterior pendiente." }
+        check(stage.mkdirs()) { "No se pudo preparar la restauración." }
+        var slots = 0
+        try {
+            ZipFile(archive).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (entry.isDirectory) continue
+                    val target = File(stage, entry.name)
+                    check(target.canonicalPath.startsWith(stage.canonicalPath + File.separator))
+                    check(target.parentFile?.mkdirs() == true || target.parentFile?.isDirectory == true)
+                    zip.getInputStream(entry).use { inp ->
+                        target.outputStream().use { out -> inp.copyTo(out) }
+                    }
+                    if (entry.name.startsWith("partidas/") &&
+                        entry.name.endsWith(".savc", ignoreCase = true) &&
+                        !entry.name.contains("_bk", ignoreCase = true)) slots++
+                }
+            }
+            check(profile.renameTo(previous)) { "No se pudo conservar la versión actual." }
+            if (!stage.renameTo(profile)) {
+                check(previous.renameTo(profile)) { "No se pudo recuperar la versión anterior." }
+                error("No se pudo instalar el respaldo.")
+            }
+            previous.deleteRecursively()
+            return slots
+        } finally {
+            stage.deleteRecursively()
         }
     }
 
