@@ -61,6 +61,9 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
     var isolatedMode by remember { mutableStateOf(mods.modMode) }
     var backups by remember { mutableStateOf(mods.backups()) }
     var pokemonId by remember { mutableStateOf("25") }
+    var catalogType by remember { mutableStateOf<ModsCatalogType?>(null) }
+    var itemId by remember { mutableStateOf("4") }
+    var itemQuantity by remember { mutableStateOf("10") }
     var pokemonLevel by remember { mutableStateOf("10") }
     var pokemonShiny by remember { mutableStateOf(false) }
     var teamSlot by remember { mutableStateOf("1") }
@@ -96,6 +99,19 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { restoring = null }) { Text("Cancelar") } },
         )
+    }
+
+    catalogType?.let { type ->
+        ModsCatalogScreen(
+            type = type,
+            onBack = { catalogType = null },
+            onSelect = { id ->
+                if (type == ModsCatalogType.POKEMON) pokemonId = id.toString()
+                else itemId = id.toString()
+                catalogType = null
+            },
+        )
+        return
     }
 
     Scaffold(
@@ -192,6 +208,62 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+
+            Text("Catálogos de IDs", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Buscá un Pokémon o un objeto, consultá su número y tocá «Usar ID» para cargarlo " +
+                    "automáticamente en el generador. Funciona sin conexión a internet.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { catalogType = ModsCatalogType.POKEMON },
+                    modifier = Modifier.weight(1f),
+                ) { Text("IDs Pokémon") }
+                OutlinedButton(
+                    onClick = { catalogType = ModsCatalogType.OBJECTS },
+                    modifier = Modifier.weight(1f),
+                ) { Text("IDs objetos") }
+            }
+
+            Text("Añadir objetos · Generador", style = MaterialTheme.typography.titleLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedTextField(
+                    value = itemId,
+                    onValueChange = { itemId = it.filter(Char::isDigit).take(3) },
+                    label = { Text("ID objeto") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = itemQuantity,
+                    onValueChange = { itemQuantity = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Cantidad") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            val itemCode = "RADITEM" + itemId + "X" + itemQuantity
+            Button(
+                enabled = isolatedMode && (itemId.toIntOrNull() ?: 0) in 1..821 &&
+                    (itemQuantity.toIntOrNull() ?: 0) in 1..99 && itemCode.length <= 13,
+                onClick = {
+                    copyCheat(itemCode, "Código copiado: $itemCode. Pegalo en el F3 del juego.")
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Copiar código: $itemCode") }
+            Text(
+                "RADITEM funciona solo con objetos permitidos por el juego y en Modo Mods. " +
+                    "Los IDs sin nombre confirmado pueden ser inválidos. " +
+                    "Un código copiado no entrega el objeto hasta introducirlo en F3.",
+                style = MaterialTheme.typography.bodySmall,
+            )
 
             Text("Guía rápida · usar Mods y Cheats", style = MaterialTheme.typography.titleLarge)
             Text(
