@@ -174,7 +174,9 @@ class ProfileSaves(private val context: Context) {
                         check(!java.nio.file.Files.isSymbolicLink(dest.toPath()))
                         val newFile = File.createTempFile(".reload-import-", ".tmp", parent)
                         try {
-                            stagedFile.temp.inputStream().use { it.copyTo(newFile.outputStream()) }
+                            newFile.outputStream().use { output ->
+                                stagedFile.temp.inputStream().use { it.copyTo(output) }
+                            }
                             check(newFile.renameTo(dest)) { "No se pudo reemplazar " + dest.name }
                         } finally { newFile.delete() }
                     }
