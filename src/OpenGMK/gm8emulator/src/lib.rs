@@ -43,3 +43,6 @@ pub use main_impl::{help, run_game};
 
 #[cfg(target_os = "android")]
 pub use android_main::android_entry;
+
+#[cfg(target_os = "ios")]
+pub mod ios_main;

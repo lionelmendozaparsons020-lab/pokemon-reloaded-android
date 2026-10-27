@@ -17,3 +17,8 @@ pub mod android;
 
 #[cfg(target_os = "android")]
 pub(crate) use android as imp;
+
+#[cfg(target_os = "ios")]
+pub mod ios;
+#[cfg(target_os = "ios")]
+pub(crate) use ios as imp;

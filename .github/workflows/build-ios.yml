@@ -1,0 +1,56 @@
+name: Build iOS
+on:
+  workflow_dispatch:
+  push:
+    branches: ['ios/iphone16-pro-prototype']
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal && rustup default 1.99.0
+      - uses: actions/cache/restore@v4
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/OpenGMK/target
+            ios/archive-tests/target
+          key: ios-v1-${{ runner.arch }}-${{ hashFiles('src/OpenGMK/Cargo.lock', 'src/OpenGMK/gm8emulator/Cargo.toml') }}
+      - name: ZIP import and save preservation tests
+        run: cargo test --manifest-path ios/archive-tests/Cargo.toml
+      - name: Build simulator app
+        run: bash ios/build.sh simulator
+      - name: Verify renderer and input in iOS simulator
+        run: bash ios/smoke.sh
+      - name: Build iPhone ARM64 IPA
+        run: bash ios/build.sh device
+      - name: Upload IPA and verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reloaded-iOS-experimental
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            ios/out/device/*.ipa
+            ios/out/device/SHA256.txt
+            ios/out/verification
+      - name: Save compiled dependencies
+        if: always() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/OpenGMK/target
+            ios/archive-tests/target
+          key: ios-v1-${{ runner.arch }}-${{ hashFiles('src/OpenGMK/Cargo.lock', 'src/OpenGMK/gm8emulator/Cargo.toml') }}

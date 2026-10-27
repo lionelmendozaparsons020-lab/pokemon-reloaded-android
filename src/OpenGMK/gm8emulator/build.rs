@@ -50,6 +50,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     Registry::new(api, version, Profile::Core, Fallbacks::All, &OPENGL_EXTENSIONS)
         .write_bindings(StructGenerator, &mut bindings)?;
 
+    // Serialize each GL call with iOS lifecycle callbacks. A pause cannot cut a call in half,
+    // and no queued GL call reaches the driver after the app enters the background.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("ios") {
+        let path = Path::new(&out).join("gl_bindings.rs");
+        let generated = fs::read_to_string(&path)?;
+        let marker = "__gl_imports::mem::transmute";
+        assert!(generated.matches(marker).count() > 100, "unexpected gl_generator output");
+        fs::write(&path, generated.replace(marker,
+            "let _ios_gl_guard = crate::ios_main::gl_guard(); __gl_imports::mem::transmute"))?;
+    }
+
     // WGL (Windows OpenGL) Bindings
     if cfg!(target_os = "windows") {
         let mut file = File::create(&Path::new(&out).join("wgl_bindings.rs"))?;

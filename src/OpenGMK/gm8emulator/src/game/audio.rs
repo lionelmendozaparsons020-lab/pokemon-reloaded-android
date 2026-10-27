@@ -1,6 +1,8 @@
 pub mod midi;
 #[cfg(target_os = "android")]
 mod aaudio;
+#[cfg(target_os = "ios")]
+pub(crate) mod ios;
 mod mixer;
 mod mp3;
 
@@ -105,14 +107,14 @@ fn session_api() -> Api {
     Api::Dummy
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn session_api() -> Api {
     Api::SoundIo
 }
 
 impl AudioManager {
     /// An audio manager that produces no output. Used on platforms without an audio backend yet.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn disabled() -> Self {
         Self {
             mixer: None,
@@ -158,25 +160,36 @@ impl AudioManager {
     }
 
     pub fn new(do_output: bool, capture_audio: bool) -> Self {
+        #[cfg(target_os = "ios")]
+        {
+            let _ = capture_audio;
+            if !do_output { return Self::disabled(); }
+            let volume = Arc::new(AtomicU32::new(1.0f32.to_bits()));
+            let (channels, rate, handle) = ios::open(volume.clone());
+            return Self { mixer: None, sample_sender: None, mixer_handle: handle,
+                mixer_channel_count: channels, mixer_sample_rate: rate, do_output: true,
+                global_volume: volume, end_times: HashMap::new(), multimedia_end: None,
+                audio_recorder: None, aaudio_stream: None };
+        }
         #[cfg(target_os = "android")]
         {
             Self::new_android(do_output)
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             Self::new_desktop(do_output, capture_audio)
         }
     }
 
     /// Desktop audio: pulls from the mixer with udon's SoundIo session.
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn new_desktop(do_output: bool, capture_audio: bool) -> Self {
         // TODO: not all these unwraps
         let session = Session::new(session_api()).unwrap();
         let device = match session.default_output_device() {
             Ok(device) => device,
             Err(_) => {
-                #[cfg(not(target_os = "android"))]
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 panic!("no se pudo obtener el dispositivo de audio de salida");
                 #[cfg(target_os = "android")]
                 return Self::disabled();
@@ -567,7 +580,9 @@ pub(crate) fn check_mp3(file: Box<[u8]>) -> Result<(), String> {
 pub fn set_output_paused(paused: bool) {
     #[cfg(target_os = "android")]
     aaudio::set_paused(paused);
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    ios::set_paused(paused);
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let _ = paused;
 }
 

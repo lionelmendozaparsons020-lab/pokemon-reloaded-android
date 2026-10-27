@@ -1,4 +1,5 @@
 use crate::types::Colour;
+#[cfg(not(target_os = "ios"))]
 use clipboard::{ClipboardContext, ClipboardProvider};
 use imgui::{self, ImColor32, TableColumnSetup, WindowToken};
 
@@ -358,6 +359,7 @@ impl IoCustomFunctions for imgui::Io {
     }
 }
 pub struct EmuClipboardProvider;
+#[cfg(not(target_os = "ios"))]
 impl imgui::ClipboardBackend for EmuClipboardProvider {
     fn get(&mut self) -> Option<String> {
         if let Ok(ctx) = ClipboardProvider::new() {
@@ -374,4 +376,11 @@ impl imgui::ClipboardBackend for EmuClipboardProvider {
             ctx.set_contents(value.to_owned()).unwrap();
         }
     }
+}
+
+// The desktop TAS editor is not exposed by the iOS launcher.
+#[cfg(target_os = "ios")]
+impl imgui::ClipboardBackend for EmuClipboardProvider {
+    fn get(&mut self) -> Option<String> { None }
+    fn set(&mut self, _value: &str) {}
 }

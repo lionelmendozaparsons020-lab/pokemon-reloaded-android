@@ -1465,7 +1465,9 @@ impl Game {
                     (width, height)
                 }
             },
-            #[cfg(not(target_os = "android"))]
+            #[cfg(target_os = "ios")]
+            window_inner_size: ramen::platform::ios::window_size(),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             window_inner_size: (width, height),
             window_is_logical_dpi: false,
             window_offset_spoof: (0, 0),
@@ -2532,6 +2534,8 @@ impl Game {
     }
 
     pub fn process_window_events(&mut self) {
+        #[cfg(target_os = "ios")]
+        crate::ios_main::wait_active();
         self.input.mouse_step();
         // What the system keyboard typed becomes events in the same queue the window is about to
         // drain, so the game sees it exactly as if it came from a hardware keyboard.
@@ -2760,10 +2764,18 @@ impl Game {
         let mut next_present = time_now;
         let log_render = std::env::var_os("OPENGMK_RENDER_LOG").is_some();
         loop {
+            #[cfg(target_os = "ios")]
+            if crate::ios_main::wait_active() {
+                time_now = Instant::now();
+                time_last = time_now;
+                step_clock = time_now;
+                accumulator = Duration::ZERO;
+                next_present = time_now;
+            }
             self.process_window_events();
 
             // Test-only savestate hotkeys for the netplay determinism check.
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
                 if self.input.keyboard_check_pressed(input::Button::F9 as u8) {
                     let state = crate::game::savestate::SaveState::from(

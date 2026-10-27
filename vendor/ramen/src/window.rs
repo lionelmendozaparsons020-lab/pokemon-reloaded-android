@@ -74,7 +74,7 @@ impl Window {
 
     /// The raw platform window handle: an `ANativeWindow*`. Mostly useful for creating a
     /// GL context yourself.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     pub fn xid(&self) -> *mut std::ffi::c_void {
         self.0.xid()
     }

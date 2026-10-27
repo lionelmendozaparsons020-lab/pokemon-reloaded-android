@@ -41,3 +41,7 @@ pokemon-reloaded-*.apk
 **/*.p12
 **/*.pfx
 **/keystore.properties
+
+# iOS build outputs
+ios/out/
+ios/archive-tests/target/

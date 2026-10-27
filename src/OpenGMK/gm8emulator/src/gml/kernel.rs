@@ -378,6 +378,7 @@ impl Game {
 
     pub fn window_set_size(&mut self, args: &[Value]) -> gml::Result<Value> {
         let (width, height) = expect_args!(args, [int, int])?;
+        #[cfg(not(target_os = "ios"))]
         if width > 0 && height > 0 {
             self.window_inner_size = (width as u32, height as u32);
             self.window.set_size((width as _, height as _));
@@ -390,7 +391,7 @@ impl Game {
         // On Android the surface is the whole screen and cannot be moved or resized; pretending
         // otherwise would break the window→game coordinate mapping, so it is only honoured on
         // desktop, where the backend implements it.
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if width > 0 && height > 0 {
             self.window_inner_size = (width as u32, height as u32);
             self.window.set_position((x as _, y as _));

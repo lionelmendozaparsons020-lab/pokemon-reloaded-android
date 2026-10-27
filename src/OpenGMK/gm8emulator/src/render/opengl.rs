@@ -31,12 +31,16 @@ use glx as native_gl;
 pub mod egl;
 #[cfg(target_os = "android")]
 use egl as native_gl;
+#[cfg(target_os = "ios")]
+pub mod eagl;
+#[cfg(target_os = "ios")]
+use eagl as native_gl;
 
 /// GLSL version header, plus any prelude GLES needs that desktop GLSL doesn't.
 /// GLSL ES 3.00 has no default float precision in the fragment shader, so it must be declared.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 const SHADER_VERSION: &str = "#version 300 es\nprecision highp float;\n";
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const SHADER_VERSION: &str = "#version 330 core\n";
 
 macro_rules! shader_file {
@@ -53,9 +57,9 @@ fn shader_source(body: &str) -> Vec<u8> {
 }
 
 // Desktop GL requires 3.3; GLES on Android only ever exposes a 3.x series starting at 3.0.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub const OPENGL_VERSION: (i32, i32) = (3, 3);
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 pub const OPENGL_VERSION: (i32, i32) = (3, 0);
 
 #[derive(Clone, Copy, PartialEq)]
@@ -535,7 +539,7 @@ impl RendererImpl {
             imp.set_swap_interval(if options.vsync { 1 } else { 0 });
             // Desktop GL accepts DEPTH_COMPONENT* with a FLOAT type; GLES requires an integer
             // type matching the depth size, so the pair has to be chosen per platform.
-            let (zbuf_format, zbuf_type) = if cfg!(target_os = "android") {
+            let (zbuf_format, zbuf_type) = if cfg!(any(target_os = "android", target_os = "ios")) {
                 if options.zbuf_24 {
                     (gl::DEPTH_COMPONENT24 as GLint, gl::UNSIGNED_INT)
                 } else {
@@ -683,7 +687,10 @@ impl RendererImpl {
             gl.UseProgram(program);
 
             // Configure gl::ReadPixels() to read from the back buffer
+            #[cfg(not(target_os = "ios"))]
             gl.ReadBuffer(gl::BACK);
+            #[cfg(target_os = "ios")]
+            gl.ReadBuffer(gl::COLOR_ATTACHMENT0);
 
             // Configure gl::ReadPixels() to align to 1 byte
             gl.PixelStorei(gl::PACK_ALIGNMENT, 1);
@@ -2202,7 +2209,7 @@ impl RendererTrait for RendererImpl {
         let pow2 = (raw as u64).next_power_of_two() as u32 >> usize::from(!raw.is_power_of_two());
         // A max-size atlas would be gigabytes of RGBA; that fails on mobile GPUs and
         // mostly on desktops too. Several smaller atlases work just as well.
-        let cap = if cfg!(target_os = "android") { 4096 } else { 8192 };
+        let cap = if cfg!(any(target_os = "android", target_os = "ios")) { 4096 } else { 8192 };
         pow2.min(cap)
     }
 
@@ -2240,7 +2247,7 @@ impl RendererTrait for RendererImpl {
                         height as _,       // height
                         0,                 // border ("must be 0")
                         // GLES has no BGRA; only the allocation happens here, so either works.
-                        if cfg!(target_os = "android") { gl::RGBA } else { gl::BGRA },
+                        if cfg!(any(target_os = "android", target_os = "ios")) { gl::RGBA } else { gl::BGRA },
                         gl::UNSIGNED_BYTE, // type
                         ptr::null(),       // data
                     );
@@ -2256,7 +2263,7 @@ impl RendererTrait for RendererImpl {
 
             // upload textures
             // GLES has no BGRA format, so the pixels are swapped to RGBA and uploaded that way.
-            if cfg!(target_os = "android") {
+            if cfg!(any(target_os = "android", target_os = "ios")) {
                 for (_, pixels) in &mut sprites {
                     crate::util::bgra2rgba(pixels);
                 }
@@ -2297,7 +2304,7 @@ impl RendererTrait for RendererImpl {
                     0,                    // yoffset
                     atlas_w as _,         // width
                     atlas_h as _,         // height
-                    if cfg!(target_os = "android") { gl::RGBA } else { gl::BGRA },
+                    if cfg!(any(target_os = "android", target_os = "ios")) { gl::RGBA } else { gl::BGRA },
                     gl::UNSIGNED_BYTE,    // type
                     atlas_buf.as_ptr() as _, // pixels
                 );
@@ -3949,7 +3956,11 @@ impl RendererTrait for RendererImpl {
 
             // Draw framebuffer to screen
             self.current_texture = None;
-            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
+            #[cfg(target_os = "ios")]
+            let screen_fbo = eagl::framebuffer();
+            #[cfg(not(target_os = "ios"))]
+            let screen_fbo = 0;
+            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, screen_fbo);
             debug_assert_eq!(self.gl.GetError(), 0);
             self.clear_view((0.0, 0.0, 0.0).into(), 1.0); // to avoid weird strobe lights (???)
             debug_assert_eq!(self.gl.GetError(), 0);
@@ -3970,7 +3981,7 @@ impl RendererTrait for RendererImpl {
                 w_x + w_w,
                 blit_y + w_h,
                 gl::COLOR_BUFFER_BIT,
-                if cfg!(target_os = "android") {
+                if cfg!(any(target_os = "android", target_os = "ios")) {
                     gl::NEAREST
                 } else if self.next_render_state.interpolate_pixels.into() {
                     gl::LINEAR
@@ -4016,7 +4027,11 @@ impl RendererTrait for RendererImpl {
             let mut fb_old = 0;
             self.gl.GetIntegerv(gl::DRAW_FRAMEBUFFER_BINDING, &mut fb_old);
             self.current_texture = None;
-            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
+            #[cfg(target_os = "ios")]
+            let screen_fbo = eagl::framebuffer();
+            #[cfg(not(target_os = "ios"))]
+            let screen_fbo = 0;
+            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, screen_fbo);
             self.gl.Viewport(0, 0, window_width as i32, window_height as i32);
             self.gl.ClearColor(0.0, 0.0, 0.0, 1.0);
             self.gl.Clear(gl::COLOR_BUFFER_BIT);
