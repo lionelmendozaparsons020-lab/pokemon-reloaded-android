@@ -40,8 +40,13 @@ pub fn fixup(name: &str, source: &str) -> Option<String> {
             const ACTIONS: &str = r#"
                 if(cheat="RAD100K"){
                     if(!instance_exists((3)) || !instance_exists((16)))exit;
-                    if(global.dinero<999999)with((16)){
-                        ex(7736,min(100000,999999-global.dinero));
+                    // Currency is stored in hundredths. Give 100,000
+                    // displayed money units, not 1,000; the previous 999999
+                    // internal-value guard artificially capped at 9,999.99.
+                    // Use the game's native money routine to update its
+                    // security witness; it may enforce a stricter game limit.
+                    if(global.dinero<999999999)with((16)){
+                        ex(7736,min(10000000,999999999-global.dinero));
                         global.numcheats+=1;
                     }
                     exit;
@@ -218,6 +223,7 @@ mod tests {
         assert!(changed.contains("with((16))"));
         assert!(changed.contains("ex(8963,i,j)"));
         assert!(changed.contains("ex(7736,min("));
+        assert!(changed.contains("ex(7736,min(10000000,999999999-global.dinero))"));
         assert!(changed.contains("ex(8038,pk,nv,0)"));
         assert!(changed.contains("instance_create(0,0,(386))"));
         assert!(changed.contains("global.rad_next_shiny=sh;"));
