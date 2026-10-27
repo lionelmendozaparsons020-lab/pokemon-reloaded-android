@@ -41,16 +41,8 @@ private data class ModsCatalogEntry(
     val verifiedName: Boolean = true,
 )
 
-// Only label entries whose game-specific IDs have been identified.
-// The rest are visible and searchable by numeric ID, never mislabeled
-// with item IDs from other Pokémon games (which use different indices).
-private val verifiedGameItems = mapOf(
-    4 to "Master Ball",
-    33 to "Calcio",
-    36 to "Proteína",
-    37 to "Zinc",
-)
-
+// Game-specific item indices are bundled from the 1.9.2.2 item list;
+// they must never be replaced with IDs from FireRed, Emerald or PokéAPI.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModsCatalogScreen(
@@ -72,18 +64,24 @@ fun ModsCatalogScreen(
                 }
             }.getOrDefault(emptyList())
         } else {
-            (1..821).map { number ->
-                val name = verifiedGameItems[number]
-                ModsCatalogEntry(number, name ?: "Objeto sin nombre confirmado", verifiedName = name != null)
-            }
+            runCatching {
+                context.assets.open("items_reloaded_catalog.csv").bufferedReader().useLines { lines ->
+                    lines.mapNotNull { line ->
+                        val parts = line.split('|', limit = 2)
+                        val number = parts.firstOrNull()?.toIntOrNull()
+                        if (parts.size != 2 || number == null || number !in 1..821) null
+                        else ModsCatalogEntry(number, parts[1])
+                    }.toList()
+                }
+            }.getOrDefault(emptyList())
         }
     }
     var query by remember(type) { mutableStateOf("") }
-    var namedOnly by remember(type) { mutableStateOf(false) }
-    val filtered = remember(entries, query, namedOnly, type) {
+    var ballsOnly by remember(type) { mutableStateOf(false) }
+    val filtered = remember(entries, query, ballsOnly, type) {
         val value = query.trim().lowercase()
         entries.filter { entry ->
-            (!namedOnly || entry.verifiedName) &&
+            (!ballsOnly || entry.id in 1..14) &&
                 (value.isEmpty() || entry.id.toString().contains(value) ||
                     entry.label.lowercase().contains(value) ||
                     entry.alternative.lowercase().contains(value))
@@ -111,7 +109,7 @@ fun ModsCatalogScreen(
                 if (isPokemon)
                     "1.025 especies · Números de Pokédex Nacional. Pokémon Reloaded puede usar índices internos distintos, especialmente para formas especiales; comprobá el resultado antes de guardar."
                 else
-                    "821 posiciones numéricas del comando RADITEM. Solo los nombres comprobados están identificados; un ID sin nombre no significa que sea un objeto válido o permitido.",
+                    "821 objetos de Pokémon Reloaded 1.9.2.2 con sus nombres e IDs. RADITEM solo admite objetos comunes y Poké Balls; no todos los objetos del catálogo pueden generarse.",
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
@@ -124,13 +122,13 @@ fun ModsCatalogScreen(
             if (!isPokemon) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
-                        selected = namedOnly,
-                        onClick = { namedOnly = !namedOnly },
-                        label = { Text("Solo identificados") },
+                        selected = ballsOnly,
+                        onClick = { ballsOnly = !ballsOnly },
+                        label = { Text("Poké Balls") },
                     )
                     FilterChip(
-                        selected = !namedOnly,
-                        onClick = { namedOnly = false },
+                        selected = !ballsOnly,
+                        onClick = { ballsOnly = false },
                         label = { Text("Todos los IDs") },
                     )
                 }
@@ -148,8 +146,7 @@ fun ModsCatalogScreen(
                         supportingContent = {
                             Text(
                                 if (isPokemon) "Pokédex Nacional · Referencia"
-                                else if (entry.verifiedName) "Nombre identificado en los comandos de esta versión"
-                                else "Sin identificación confirmada en Pokémon Reloaded"
+                                else "Índice de objetos de Pokémon Reloaded 1.9.2.2"
                             )
                         },
                         trailingContent = {
