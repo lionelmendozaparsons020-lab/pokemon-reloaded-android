@@ -64,6 +64,7 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
     var catalogType by remember { mutableStateOf<ModsCatalogType?>(null) }
     var itemId by remember { mutableStateOf("4") }
     var itemQuantity by remember { mutableStateOf("10") }
+    var friendshipCandies by remember { mutableStateOf("20") }
     var pokemonLevel by remember { mutableStateOf("10") }
     var pokemonShiny by remember { mutableStateOf(false) }
     var teamSlot by remember { mutableStateOf("1") }
@@ -192,7 +193,9 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                         "de partida. El modo experimental no garantiza que el juego acepte todos los objetos.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text("RAD100K — entrega hasta 100.000 de dinero.")
+                Text("RAD100K — intenta sumar 100.000 de dinero real del juego. " +
+                    "Se corrigió la conversión de centésimos y el límite artificial de 9.999,99. " +
+                    "Si el juego mantiene un tope interno propio, no se lo saltea.")
                 Text("RADITEM — entrega 10 unidades del objeto ID 1.")
                 Text("RADITEM1X12 — entrega 12 unidades del objeto ID 1.")
                 Text("RADITEM4X10 — prueba 10 Master Balls en la partida experimental.")
@@ -410,6 +413,38 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
             OutlinedButton(onClick = {
                 copyCheat("SHINY", "SHINY copiado. Funciona al cumplir los requisitos del juego.")
             }, modifier = Modifier.fillMaxWidth()) { Text("Copiar código oficial SHINY") }
+
+            Text("Aumentar amistad · Caramelos de experiencia", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Los caramelos de experiencia de Pokémon Reloaded aumentan la amistad cuando " +
+                    "los usás sobre un Pokémon. Esta opción genera el objeto con la rutina " +
+                    "del inventario del juego: no modifica valores secretos del guardado. " +
+                    "También otorgan experiencia. Caramelo Exp. XS = ID 683.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = friendshipCandies,
+                onValueChange = { friendshipCandies = it.filter(Char::isDigit).take(2) },
+                label = { Text("Caramelos Exp. XS (1 a 99)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            val friendshipCode = "RADITEM683X" + friendshipCandies
+            Button(
+                onClick = {
+                    copyCheat(friendshipCode, "Copiado: $friendshipCode. Usá los caramelos desde la mochila.")
+                },
+                enabled = isolatedMode && (friendshipCandies.toIntOrNull() ?: 0) in 1..99,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Copiar código de amistad: $friendshipCode") }
+            Text(
+                "Pasos: 1) ejecutá el código con F3; 2) abrí la mochila; " +
+                    "3) usá los Caramelos Exp. XS sobre el Pokémon elegido; " +
+                    "4) comprobá la amistad en el juego. " +
+                    "No establece amistad máxima instantánea y el truco solo funciona " +
+                    "si el juego admite ese objeto mediante RADITEM.",
+                style = MaterialTheme.typography.bodySmall,
+            )
 
             Text("IV de entrenamiento · objetos", style = MaterialTheme.typography.titleLarge)
             Text(
