@@ -86,7 +86,7 @@ class ProfileSaves(private val context: Context) {
 
     private data class Staged(val dest: File, val temp: File)
 
-    suspend fun import(profile: SaveProfile, uri: Uri, targetSlot: Int?): Result<Int> =
+    suspend fun importArchive(profile: SaveProfile, uri: Uri, targetSlot: Int?): Result<Int> =
         withContext(Dispatchers.IO) {
             runCatching {
                 checkClosed()
