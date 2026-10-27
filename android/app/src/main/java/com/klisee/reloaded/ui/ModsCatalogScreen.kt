@@ -31,6 +31,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import java.text.Normalizer
+
+private fun searchable(text: String): String =
+    Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
+        .replace(Regex("[\\u0300-\\u036f]"), "")
+        .replace(Regex("[^a-z0-9]"), "")
 
 enum class ModsCatalogType { POKEMON, OBJECTS }
 
@@ -79,12 +85,12 @@ fun ModsCatalogScreen(
     var query by remember(type) { mutableStateOf("") }
     var ballsOnly by remember(type) { mutableStateOf(false) }
     val filtered = remember(entries, query, ballsOnly, type) {
-        val value = query.trim().lowercase()
+        val value = searchable(query.trim())
         entries.filter { entry ->
             (!ballsOnly || entry.id in 1..14) &&
                 (value.isEmpty() || entry.id.toString().contains(value) ||
-                    entry.label.lowercase().contains(value) ||
-                    entry.alternative.lowercase().contains(value))
+                    searchable(entry.label).contains(value) ||
+                    searchable(entry.alternative).contains(value))
         }
     }
     val isPokemon = type == ModsCatalogType.POKEMON
