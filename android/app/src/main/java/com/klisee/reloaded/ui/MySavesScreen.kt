@@ -114,7 +114,7 @@ fun MySavesScreen(repo: GameRepository, onBack: () -> Unit) {
         pendingImport = null
         if (uri != null && selection != null) scope.launch {
             busy = true
-            val result = profileSaves.import(selection.first, uri, selection.second)
+            val result = profileSaves.importArchive(selection.first, uri, selection.second)
             busy = false
             snackbar.showSnackbar(result.fold(
                 onSuccess = { "Importado en " + selection.first.label + ": " + it + " archivos. Se creó un respaldo del perfil anterior." },
