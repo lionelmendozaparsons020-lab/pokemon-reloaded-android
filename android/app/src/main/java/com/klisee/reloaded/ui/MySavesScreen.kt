@@ -28,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -37,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -50,198 +52,198 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The game's save slots, read from the summaries the game writes beside each save.
- *
- * It is the same information its own "Cargar" screen shows, brought out where it can be looked at
- * without starting the game - including which slots are still empty.
+ * All six slots displayed simultaneously: three in Normal and three in Mods.
+ * Every import/export/delete operation explicitly targets its own profile folder.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MySavesScreen(repo: GameRepository, onBack: () -> Unit) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val profileSaves = remember(context) { ProfileSaves(context) }
     val snackbar = remember { SnackbarHostState() }
-    var slots by remember { mutableStateOf<List<GameRepository.SaveSlot>?>(null) }
+    val scope = rememberCoroutineScope()
     var revision by remember { mutableStateOf(0) }
-    // Which slot a pending export belongs to: the picker answers later, and only gives a file.
-    var exporting by remember { mutableStateOf<Int?>(null) }
-    var importing by remember { mutableStateOf<Int?>(null) }
-    // Deleting asks twice, and the second time says plainly what it costs.
-    var askFirst by remember { mutableStateOf<Int?>(null) }
-    var askSecond by remember { mutableStateOf<Int?>(null) }
-
-    fun deleteSlot(index: Int) {
-        askSecond = null
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { repo.deleteSlot(index) }
-            snackbar.showSnackbar(
-                result.fold({ "Partida $index borrada." }, { "No pude borrar: ${it.message}" }),
-            )
-            if (result.isSuccess) {
-                // Empty the card the moment the save is gone, rather than waiting for the re-read:
-                // the list used to sit there showing a save that no longer existed.
-                slots = slots?.map {
-                    if (it.index == index) GameRepository.SaveSlot(index, null, null, null, null) else it
-                }
-            }
-            revision++
-        }
-    }
-
-    askFirst?.let { index ->
-        AlertDialog(
-            onDismissRequest = { askFirst = null },
-            icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-            title = { Text("Borrar la partida") },
-            text = { Text("¿Estas seguro de que quieres borrar tu partida?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    askFirst = null
-                    askSecond = index
-                }) { Text("Si") }
-            },
-            dismissButton = { TextButton(onClick = { askFirst = null }) { Text("No") } },
-        )
-    }
-
-    askSecond?.let { index ->
-        AlertDialog(
-            onDismissRequest = { askSecond = null },
-            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
-            title = { Text("ADVERTENCIA") },
-            text = {
-                Text(
-                    "ESTAS A PUNTO DE BORRAR TU PARTIDA PARA SIEMPRE, ¿ESTAS SEGURO DE QUE ESTAS " +
-                        "HACIENDO? SI BORRAS TU PARTIDA SE PERDERA PARA SIEMPRE (ESO ES MUCHO TIEMPO) " +
-                        "a no ser que tengas una copia de seguridad.",
-                )
-            },
-            confirmButton = { TextButton(onClick = { deleteSlot(index) }) { Text("Estoy seguro") } },
-            dismissButton = { TextButton(onClick = { askSecond = null }) { Text("Mejor no") } },
-        )
-    }
+    var normalSlots by remember { mutableStateOf<List<GameRepository.SaveSlot>?>(null) }
+    var modsSlots by remember { mutableStateOf<List<GameRepository.SaveSlot>?>(null) }
+    var pendingExport by remember { mutableStateOf<Pair<SaveProfile, Int?>?>(null) }
+    var pendingImport by remember { mutableStateOf<Pair<SaveProfile, Int?>?>(null) }
+    var pendingDelete by remember { mutableStateOf<Pair<SaveProfile, Int>?>(null) }
+    var busy by remember { mutableStateOf(false) }
 
     LaunchedEffect(revision) {
-        slots = withContext(Dispatchers.IO) { repo.saveSlots() }
-    }
-
-    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        val index = exporting
-        exporting = null
-        if (uri == null || index == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val file = repo.exportSlot(index).getOrElse {
-                snackbar.showSnackbar("No pude exportar: ${it.message}")
-                return@launch
-            }
-            val copied = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        file.inputStream().use { it.copyTo(out) }
-                    } ?: error("No pude abrir el destino.")
-                }
-            }
-            file.delete()
-            snackbar.showSnackbar(if (copied.isSuccess) "Partida $index exportada." else "No pude guardar el archivo.")
+        val both = withContext(Dispatchers.IO) {
+            profileSaves.slots(SaveProfile.NORMAL) to profileSaves.slots(SaveProfile.MODS)
         }
+        normalSlots = both.first
+        modsSlots = both.second
     }
 
-    val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val index = importing
-        importing = null
-        if (uri == null || index == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { repo.importSlot(uri, index) }
-            snackbar.showSnackbar(
-                result.fold(
-                    { "Partida importada en el Slot $index." },
-                    { "No pude importar: ${it.message}" },
-                ),
+    val exportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val selection = pendingExport
+        pendingExport = null
+        if (uri != null && selection != null) scope.launch {
+            busy = true
+            val file = profileSaves.export(selection.first, selection.second)
+            val result = file.fold(
+                onSuccess = { archive ->
+                    try {
+                        withContext(Dispatchers.IO) {
+                            context.contentResolver.openOutputStream(uri)?.use { output ->
+                                archive.inputStream().use { it.copyTo(output) }
+                            } ?: error("No se pudo abrir el destino.")
+                        }
+                        "Archivo exportado de " + selection.first.label + "."
+                    } catch (error: Exception) {
+                        "No se pudo guardar: " + (error.message ?: "error")
+                    } finally {
+                        archive.delete()
+                    }
+                },
+                onFailure = { error -> "No se pudo exportar: " + (error.message ?: "error") }
             )
+            busy = false
+            snackbar.showSnackbar(result)
+        }
+    }
+    val importPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val selection = pendingImport
+        pendingImport = null
+        if (uri != null && selection != null) scope.launch {
+            busy = true
+            val result = profileSaves.import(selection.first, uri, selection.second)
+            busy = false
+            snackbar.showSnackbar(result.fold(
+                onSuccess = { "Importado en " + selection.first.label + ": " + it + " archivos. Se creó un respaldo del perfil anterior." },
+                onFailure = { "No se pudo importar: " + (it.message ?: "error") }
+            ))
             revision++
         }
     }
 
-    val saveAll = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val file = repo.exportSaves().getOrElse {
-                snackbar.showSnackbar("No pude exportar: ${it.message}")
-                return@launch
+    pendingDelete?.let { request ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+            title = { Text("Borrar partida · " + request.first.label) },
+            text = {
+                Text("Se borrará únicamente el slot " + request.second +
+                    " del perfil " + request.first.label +
+                    ". La partida del otro perfil NO se borrará. " +
+                    "Exportá una copia antes de continuar.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    scope.launch {
+                        busy = true
+                        val result = profileSaves.delete(request.first, request.second)
+                        busy = false
+                        snackbar.showSnackbar(result.fold(
+                            { "Slot eliminado en " + request.first.label + "." },
+                            { "No se pudo borrar: " + (it.message ?: "error") }
+                        ))
+                        revision++
+                    }
+                }) { Text("Sí, borrar este slot") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancelar") }
             }
-            val copied = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        file.inputStream().use { it.copyTo(out) }
-                    } ?: error("No pude abrir el destino.")
-                }
-            }
-            file.delete()
-            snackbar.showSnackbar(if (copied.isSuccess) "Todo exportado." else "No pude guardar el archivo.")
-        }
-    }
-
-    val restoreEverything = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { repo.importSaves(uri) }
-            snackbar.showSnackbar(result.fold({ "Partidas, equipos y personajes restaurados." }, { "No pude importar: ${it.message}" }))
-            revision++
-        }
+        )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Mis partidas") },
+                title = { Text("Mis partidas · 6 slots") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver") }
-                },
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                }
             )
         },
-        snackbarHost = { SnackbarHost(snackbar, modifier = Modifier.padding(bottom = BottomNavSpace)) },
-        contentWindowInsets = WindowInsets(0.dp),
+        snackbarHost = {
+            SnackbarHost(snackbar, modifier = Modifier.padding(bottom = BottomNavSpace))
+        },
+        contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(padding).fillMaxSize()
+                .verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            val list = slots
-            if (list == null) {
-                Text("Leyendo las partidas...", style = MaterialTheme.typography.bodyMedium)
-                return@Column
-            }
-
-            list.forEach { slot ->
-                SaveSlotCard(
-                    slot = slot,
-                    onExport = {
-                        exporting = slot.index
-                        save.launch("partida${slot.index}.zip")
-                    },
-                    onImport = {
-                        importing = slot.index
-                        restore.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
-                    },
-                    onDelete = { askFirst = slot.index },
+            Text(
+                "Podés ver y administrar los dos perfiles sin cambiar de modo. " +
+                "Son dos grupos independientes de tres partidas cada uno. " +
+                "Para jugar, elegí el modo en «Mods y Cheats» y reiniciá el juego.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            val groups = listOf(
+                SaveProfile.NORMAL to normalSlots,
+                SaveProfile.MODS to modsSlots,
+            )
+            for ((profile, slots) in groups) {
+                HorizontalDivider()
+                Text(
+                    if (profile == SaveProfile.NORMAL) "Partidas normales (3)"
+                    else "Partidas con Mods (3)",
+                    style = MaterialTheme.typography.titleLarge
                 )
-            }
-
-            // One slot at a time is the export and import on each card. This is the whole set: the
-            // teams and the custom characters live outside the slots, so they need their own way in
-            // and out. One under the other, because side by side the longer label wrapped and left
-            // the two buttons uneven.
-            Column {
+                if (!profileSaves.initialized(profile)) {
+                    Text(
+                        "Este perfil todavía no se inicializó. Abrí y cerrá el juego " +
+                        "una vez en el modo " + profile.label + ".",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (slots == null) {
+                    Text("Leyendo partidas...")
+                } else {
+                    for (slot in slots) {
+                        SaveSlotCard(
+                            slot = slot,
+                            slotLabel = profile.label + " · Slot " + slot.index,
+                            onExport = {
+                                pendingExport = profile to slot.index
+                                exportPicker.launch("reloaded_" + profile.folder +
+                                    "_slot" + slot.index + ".zip")
+                            },
+                            onImport = {
+                                pendingImport = profile to slot.index
+                                importPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                            },
+                            onDelete = { pendingDelete = profile to slot.index },
+                            enabled = !busy && profileSaves.initialized(profile)
+                        )
+                    }
+                }
                 TextButton(
-                    onClick = { saveAll.launch("partidas-reloaded.zip") },
+                    onClick = {
+                        pendingExport = profile to null
+                        exportPicker.launch("reloaded_" + profile.folder + "_todas.zip")
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Exportar todas las partidas") }
+                    enabled = !busy && profileSaves.initialized(profile),
+                ) { Text("Exportar los 3 slots y equipos · " + profile.label) }
                 TextButton(
-                    onClick = { restoreEverything.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                    onClick = {
+                        pendingImport = profile to null
+                        importPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Importar todas las partidas") }
+                    enabled = !busy && profileSaves.initialized(profile),
+                ) { Text("Importar partidas y equipos · " + profile.label) }
             }
-
+            Text(
+                "Las importaciones guardan una copia de seguridad previa dentro de la app. " +
+                "Cerrá siempre el juego antes de importar, exportar o borrar.",
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.height(BottomNavSpace))
         }
     }
@@ -251,6 +253,8 @@ fun MySavesScreen(repo: GameRepository, onBack: () -> Unit) {
 @Composable
 private fun SaveSlotCard(
     slot: GameRepository.SaveSlot,
+    slotLabel: String,
+    enabled: Boolean,
     onExport: () -> Unit,
     onImport: () -> Unit,
     onDelete: () -> Unit,
@@ -277,14 +281,14 @@ private fun SaveSlotCard(
                 )
                 Spacer(Modifier.size(12.dp))
                 Text(
-                    text = "Slot ${slot.index}",
+                    text = slotLabel,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.weight(1f))
                 // Only a slot with something in it can be deleted.
                 if (filled) {
-                    IconButton(onClick = onDelete) {
+                    IconButton(onClick = onDelete, enabled = enabled) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
                             contentDescription = "Borrar la partida",
@@ -313,12 +317,12 @@ private fun SaveSlotCard(
             Spacer(Modifier.height(8.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onExport, enabled = filled) {
+                TextButton(onClick = onExport, enabled = enabled && filled) {
                     Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
                     Text("Exportar partida")
                 }
-                TextButton(onClick = onImport) {
+                TextButton(onClick = onImport, enabled = enabled) {
                     Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
                     Text("Importar partida")
