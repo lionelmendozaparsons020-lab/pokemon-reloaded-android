@@ -40,7 +40,7 @@ pub fn find_exe(root:&Path)->Result<PathBuf,String> {
         for entry in fs::read_dir(dir)? {
             let entry=entry?;let kind=entry.file_type()?;let p=entry.path();
             if kind.is_symlink() {continue;}
-            if kind.is_dir() {walk(&p,depth+1,out)?;}
+            if kind.is_dir() && !dir.join("data").is_dir() {walk(&p,depth+1,out)?;}
             else if p.extension().and_then(|s|s.to_str()).is_some_and(|s|s.eq_ignore_ascii_case("exe")) && dir.join("data").is_dir() {out.push(p);}
         }
         Ok(())

@@ -10,7 +10,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    runs-on: macos-15
+    # Intel runners avoid the current ARM64 capacity queue; device output is still ARM64.
+    runs-on: macos-15-intel
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4

@@ -110,15 +110,20 @@ fn smoke_test(w:u32,h:u32)->Result<i32,String> {
     let connection=ramen::connection::Connection::new().map_err(|e|format!("{e:?}"))?;
     let window=connection.builder().size((320,240)).build().map_err(|e|format!("{e:?}"))?;
     let mut renderer=Renderer::new((),&connection,&RendererOptions{size:(320,240),..Default::default()},&window,(0.0,0.0,0.0).into())?;
+    renderer.push_atlases(crate::render::atlas::AtlasBuilder::new(renderer.max_texture_size() as i32))?;
     renderer.set_view(0,0,320,240,0.0,0,0,320,240);
     renderer.clear_view((0.1,0.25,0.6).into(),1.0);
     renderer.draw_rectangle(80.,60.,240.,180.,0x00ff00,1.0);
     renderer.present(w,h,Scaling::Aspect(-1.0));
     let px=renderer.get_pixels(160,120,1,1);
     if px.len()<4 || px[1]<200 || px[0]>30 || px[2]>30 {return Err(format!("Render test: píxel inesperado {px:?}"));}
-    gm_ios_key(90,true);gm_ios_key(90,false);
-    if platform::drain_pending_input().len()!=2 {return Err("Falló la cola de controles".into());}
+    platform::drain_pending_input(); // Discard initial drawable resize events.
+    gm_ios_key(90,true);gm_ios_key(90,false);gm_ios_text('ñ' as u32);
+    let events=platform::drain_pending_input();
+    if !matches!(events.as_slice(), [InputEvent::KeyDown{key:Key::Z,text:None},InputEvent::KeyUp{key:Key::Z},InputEvent::Text('ñ')]) {
+        return Err(format!("Falló la cola de controles: {events:?}"));
+    }
     eprintln!("IOS_SMOKE_OK: shader, framebuffer, readback and input");
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    std::thread::sleep(std::time::Duration::from_secs(8));
     Ok(0)
 }
