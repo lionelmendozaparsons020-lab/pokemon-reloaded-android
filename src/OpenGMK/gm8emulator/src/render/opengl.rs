@@ -1859,7 +1859,7 @@ fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
 impl RendererImpl {
     fn reloaded_postfx_settings() -> (i32, f32, f32) {
         let text = std::fs::read_to_string(crate::android_main::storage_path("shaders.txt"))
-            .unwrap_or_else(|_| String::from("high\\n135\\n55\\n"));
+            .unwrap_or_else(|_| String::from("high\n135\n55\n"));
         let mut lines = text.lines();
         let quality = match lines.next().unwrap_or("high").trim().to_ascii_lowercase().as_str() {
             "off" | "0" | "false" => 0,
