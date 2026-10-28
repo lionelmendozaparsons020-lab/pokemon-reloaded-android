@@ -251,6 +251,10 @@ pub struct RendererImpl {
     #[cfg(target_os = "android")]
     reloaded_postfx_quality: i32,
     #[cfg(target_os = "android")]
+    reloaded_sun_angle: f32,
+    #[cfg(target_os = "android")]
+    reloaded_shadow_strength: f32,
+    #[cfg(target_os = "android")]
     reloaded_postfx_started: std::time::Instant,
 
     /// Lazily-built program/buffers for the on-screen touch controls (Android only).
@@ -268,6 +272,8 @@ struct ReloadedPostFx {
     loc_texel: GLint,
     loc_time: GLint,
     loc_quality: GLint,
+    loc_sun_dir: GLint,
+    loc_shadow_strength: GLint,
 }
 
 /// One image in the packed control artwork: which control it belongs to, and where it sits in the
@@ -818,6 +824,10 @@ impl RendererImpl {
                 reloaded_postfx_attempted: false,
                 #[cfg(target_os = "android")]
                 reloaded_postfx_quality: 0,
+                #[cfg(target_os = "android")]
+                reloaded_sun_angle: 135.0,
+                #[cfg(target_os = "android")]
+                reloaded_shadow_strength: 0.55,
                 #[cfg(target_os = "android")]
                 reloaded_postfx_started: std::time::Instant::now(),
 
@@ -1847,15 +1857,20 @@ fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
 
 #[cfg(target_os = "android")]
 impl RendererImpl {
-    fn reloaded_postfx_quality_setting() -> i32 {
-        // Defaults to HIGH: optional file shaders.txt in the application's game directory.
-        let setting = std::fs::read_to_string(crate::android_main::storage_path("shaders.txt"))
-            .unwrap_or_else(|_| String::from("high"));
-        match setting.trim().to_ascii_lowercase().as_str() {
+    fn reloaded_postfx_settings() -> (i32, f32, f32) {
+        let text = std::fs::read_to_string(crate::android_main::storage_path("shaders.txt"))
+            .unwrap_or_else(|_| String::from("high\\n135\\n55\\n"));
+        let mut lines = text.lines();
+        let quality = match lines.next().unwrap_or("high").trim().to_ascii_lowercase().as_str() {
             "off" | "0" | "false" => 0,
             "lite" | "low" | "1" => 1,
             _ => 2,
-        }
+        };
+        let angle = lines.next().and_then(|x| x.trim().parse::<f32>().ok())
+            .unwrap_or(135.0).clamp(0.0, 359.0);
+        let strength = lines.next().and_then(|x| x.trim().parse::<f32>().ok())
+            .unwrap_or(55.0).clamp(0.0, 100.0) / 100.0;
+        (quality, angle, strength)
     }
 
     fn create_reloaded_postfx(&self) -> Result<ReloadedPostFx, String> {
@@ -1909,6 +1924,8 @@ impl RendererImpl {
                 loc_texel: gl.GetUniformLocation(program, b"u_texel\0".as_ptr().cast()),
                 loc_time: gl.GetUniformLocation(program, b"u_time\0".as_ptr().cast()),
                 loc_quality: gl.GetUniformLocation(program, b"u_quality\0".as_ptr().cast()),
+                loc_sun_dir: gl.GetUniformLocation(program, b"u_sun_dir\0".as_ptr().cast()),
+                loc_shadow_strength: gl.GetUniformLocation(program, b"u_shadow_strength\0".as_ptr().cast()),
             })
         }
     }
@@ -1917,7 +1934,10 @@ impl RendererImpl {
     fn present_reloaded_postfx(&mut self, x: i32, y: i32, w: i32, h: i32) -> bool {
         if !self.reloaded_postfx_attempted {
             self.reloaded_postfx_attempted = true;
-            self.reloaded_postfx_quality = Self::reloaded_postfx_quality_setting();
+            let (quality, angle, strength) = Self::reloaded_postfx_settings();
+            self.reloaded_postfx_quality = quality;
+            self.reloaded_sun_angle = angle;
+            self.reloaded_shadow_strength = strength;
             if self.reloaded_postfx_quality != 0 {
                 match self.create_reloaded_postfx() {
                     Ok(shader) => self.reloaded_postfx = Some(shader),
@@ -1957,6 +1977,9 @@ impl RendererImpl {
                 1.0 / self.framebuffer.height as f32);
             gl.Uniform1f(shader.loc_time, self.reloaded_postfx_started.elapsed().as_secs_f32());
             gl.Uniform1i(shader.loc_quality, self.reloaded_postfx_quality);
+            let sun_radians = self.reloaded_sun_angle.to_radians();
+            gl.Uniform2f(shader.loc_sun_dir, sun_radians.cos(), sun_radians.sin());
+            gl.Uniform1f(shader.loc_shadow_strength, self.reloaded_shadow_strength);
             gl.DrawArrays(gl::TRIANGLES, 0, 3);
             let status = gl.GetError();
             gl.BindTexture(gl::TEXTURE_2D, texture_old as GLuint);
