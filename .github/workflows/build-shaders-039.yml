@@ -2,7 +2,7 @@ name: Build Pokémon Reloaded 0.3.9 con Shaders
 
 on:
   push:
-    branches: [shaders-039-desde-partidas]
+    branches: [shaders-039-desde-partidas, shaders-039-sombras-sol-pixelsharp]
   workflow_dispatch:
 
 permissions:
