@@ -244,9 +244,30 @@ pub struct RendererImpl {
     /// How much of `draw_offset` the shader applies (0 = current game step, 1 = previous one).
     interp_amount: f32,
 
+    #[cfg(target_os = "android")]
+    reloaded_postfx: Option<ReloadedPostFx>,
+    #[cfg(target_os = "android")]
+    reloaded_postfx_attempted: bool,
+    #[cfg(target_os = "android")]
+    reloaded_postfx_quality: i32,
+    #[cfg(target_os = "android")]
+    reloaded_postfx_started: std::time::Instant,
+
     /// Lazily-built program/buffers for the on-screen touch controls (Android only).
     #[cfg(target_os = "android")]
     overlay: Option<Overlay>,
+}
+
+// RELOADED_POSTFX_PATCH_V1: scene-only GLES shader drawn before touch buttons.
+#[cfg(target_os = "android")]
+#[derive(Clone, Copy)]
+struct ReloadedPostFx {
+    program: GLuint,
+    vao: GLuint,
+    loc_scene: GLint,
+    loc_texel: GLint,
+    loc_time: GLint,
+    loc_quality: GLint,
 }
 
 /// One image in the packed control artwork: which control it belongs to, and where it sits in the
@@ -790,6 +811,15 @@ impl RendererImpl {
                 buf_state,
                 draw_offset: [0.0, 0.0],
                 interp_amount: 0.0,
+
+                #[cfg(target_os = "android")]
+                reloaded_postfx: None,
+                #[cfg(target_os = "android")]
+                reloaded_postfx_attempted: false,
+                #[cfg(target_os = "android")]
+                reloaded_postfx_quality: 0,
+                #[cfg(target_os = "android")]
+                reloaded_postfx_started: std::time::Instant::now(),
 
                 #[cfg(target_os = "android")]
                 overlay: None,
@@ -1812,6 +1842,139 @@ fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
         push_circle(out, ww, wh, kx, ky, kr * 1.06, [0.0, 0.0, 0.0, 0.22]);
         push_circle(out, ww, wh, kx, ky, kr, shade(0.27, 0.55));
         push_ring(out, ww, wh, kx, ky, kr, (r * 0.04).max(2.0), shade(0.40, 0.50));
+    }
+}
+
+#[cfg(target_os = "android")]
+impl RendererImpl {
+    fn reloaded_postfx_quality_setting() -> i32 {
+        // Defaults to HIGH: optional file shaders.txt in the application's game directory.
+        let setting = std::fs::read_to_string(crate::android_main::storage_path("shaders.txt"))
+            .unwrap_or_else(|_| String::from("high"));
+        match setting.trim().to_ascii_lowercase().as_str() {
+            "off" | "0" | "false" => 0,
+            "lite" | "low" | "1" => 1,
+            _ => 2,
+        }
+    }
+
+    fn create_reloaded_postfx(&self) -> Result<ReloadedPostFx, String> {
+        unsafe {
+            let vertex_source = shader_source(r#"
+                out vec2 v_uv;
+                void main() {
+                    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+                    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+                    // Match the vertically inverted source framebuffer from present().
+                    v_uv = vec2(p.x, 1.0 - p.y);
+                }
+            "#);
+            let fragment_source = shader_source(include_str!("glsl/reloaded_postfx.glsl"));
+            let gl = &self.gl;
+            let mut shaders: [GLuint; 2] = [0, 0];
+            for (index, (kind, code)) in [
+                (gl::VERTEX_SHADER, &vertex_source),
+                (gl::FRAGMENT_SHADER, &fragment_source),
+            ].iter().enumerate() {
+                let shader = gl.CreateShader(*kind);
+                gl.ShaderSource(shader, 1, &(code.as_ptr() as *const GLchar), ptr::null());
+                gl.CompileShader(shader);
+                let mut success = 0;
+                gl.GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
+                if success == 0 {
+                    gl.DeleteShader(shader);
+                    for old in shaders { if old != 0 { gl.DeleteShader(old); } }
+                    return Err(format!("Fallo de compilación GLSL (paso {})", index));
+                }
+                shaders[index] = shader;
+            }
+            let program = gl.CreateProgram();
+            gl.AttachShader(program, shaders[0]);
+            gl.AttachShader(program, shaders[1]);
+            gl.LinkProgram(program);
+            gl.DeleteShader(shaders[0]);
+            gl.DeleteShader(shaders[1]);
+            let mut success = 0;
+            gl.GetProgramiv(program, gl::LINK_STATUS, &mut success);
+            if success == 0 {
+                gl.DeleteProgram(program);
+                return Err(String::from("No se pudo enlazar el shader postprocesado"));
+            }
+            let mut vao = 0;
+            gl.GenVertexArrays(1, &mut vao);
+            Ok(ReloadedPostFx {
+                program,
+                vao,
+                loc_scene: gl.GetUniformLocation(program, b"u_scene\0".as_ptr().cast()),
+                loc_texel: gl.GetUniformLocation(program, b"u_texel\0".as_ptr().cast()),
+                loc_time: gl.GetUniformLocation(program, b"u_time\0".as_ptr().cast()),
+                loc_quality: gl.GetUniformLocation(program, b"u_quality\0".as_ptr().cast()),
+            })
+        }
+    }
+
+    // Returns false on disabled effects or GL errors, preserving the original blit path.
+    fn present_reloaded_postfx(&mut self, x: i32, y: i32, w: i32, h: i32) -> bool {
+        if !self.reloaded_postfx_attempted {
+            self.reloaded_postfx_attempted = true;
+            self.reloaded_postfx_quality = Self::reloaded_postfx_quality_setting();
+            if self.reloaded_postfx_quality != 0 {
+                match self.create_reloaded_postfx() {
+                    Ok(shader) => self.reloaded_postfx = Some(shader),
+                    Err(error) => eprintln!("[reloaded-postfx] {}. Se usa imagen original.", error),
+                }
+            }
+        }
+        let Some(shader) = self.reloaded_postfx else { return false };
+        if w <= 0 || h <= 0 || self.framebuffer.width == 0 || self.framebuffer.height == 0 {
+            return false
+        }
+        unsafe {
+            let gl = &self.gl;
+            let (mut program_old, mut vao_old, mut texture_old, mut active_old) = (0, 0, 0, 0);
+            let mut viewport_old = [0; 4];
+            gl.GetIntegerv(gl::CURRENT_PROGRAM, &mut program_old);
+            gl.GetIntegerv(gl::VERTEX_ARRAY_BINDING, &mut vao_old);
+            gl.GetIntegerv(gl::ACTIVE_TEXTURE, &mut active_old);
+            gl.ActiveTexture(gl::TEXTURE0);
+            gl.GetIntegerv(gl::TEXTURE_BINDING_2D, &mut texture_old);
+            gl.GetIntegerv(gl::VIEWPORT, viewport_old.as_mut_ptr());
+            let blend_old = gl.IsEnabled(gl::BLEND) != 0;
+            let depth_old = gl.IsEnabled(gl::DEPTH_TEST) != 0;
+            let cull_old = gl.IsEnabled(gl::CULL_FACE) != 0;
+            let scissor_old = gl.IsEnabled(gl::SCISSOR_TEST) != 0;
+            gl.Disable(gl::BLEND);
+            gl.Disable(gl::DEPTH_TEST);
+            gl.Disable(gl::CULL_FACE);
+            gl.Disable(gl::SCISSOR_TEST);
+            gl.Viewport(x, y, w, h);
+            gl.UseProgram(shader.program);
+            gl.BindVertexArray(shader.vao);
+            gl.BindTexture(gl::TEXTURE_2D, self.framebuffer.texture);
+            gl.Uniform1i(shader.loc_scene, 0);
+            gl.Uniform2f(shader.loc_texel,
+                1.0 / self.framebuffer.width as f32,
+                1.0 / self.framebuffer.height as f32);
+            gl.Uniform1f(shader.loc_time, self.reloaded_postfx_started.elapsed().as_secs_f32());
+            gl.Uniform1i(shader.loc_quality, self.reloaded_postfx_quality);
+            gl.DrawArrays(gl::TRIANGLES, 0, 3);
+            let status = gl.GetError();
+            gl.BindTexture(gl::TEXTURE_2D, texture_old as GLuint);
+            gl.ActiveTexture(active_old as GLuint);
+            gl.BindVertexArray(vao_old as GLuint);
+            gl.UseProgram(program_old as GLuint);
+            gl.Viewport(viewport_old[0], viewport_old[1], viewport_old[2], viewport_old[3]);
+            if blend_old { gl.Enable(gl::BLEND) } else { gl.Disable(gl::BLEND) }
+            if depth_old { gl.Enable(gl::DEPTH_TEST) } else { gl.Disable(gl::DEPTH_TEST) }
+            if cull_old { gl.Enable(gl::CULL_FACE) } else { gl.Disable(gl::CULL_FACE) }
+            if scissor_old { gl.Enable(gl::SCISSOR_TEST) } else { gl.Disable(gl::SCISSOR_TEST) }
+            if status != gl::NO_ERROR {
+                eprintln!("[reloaded-postfx] error GL {}: desactivado hasta reiniciar", status);
+                self.reloaded_postfx = None;
+                return false
+            }
+        }
+        true
     }
 }
 
@@ -3972,24 +4135,31 @@ impl RendererTrait for RendererImpl {
             // here. For a full-height or centred rectangle the two agree, so only the keyboard inset
             // - which anchors the game to the top - actually needs the flip.
             let blit_y = window_height - w_y - w_h;
-            self.gl.BlitFramebuffer(
-                0,
-                fb_height,
-                fb_width,
-                0,
-                w_x,
-                blit_y,
-                w_x + w_w,
-                blit_y + w_h,
-                gl::COLOR_BUFFER_BIT,
-                if cfg!(target_os = "android") {
-                    gl::NEAREST
-                } else if self.next_render_state.interpolate_pixels.into() {
-                    gl::LINEAR
-                } else {
-                    gl::NEAREST
-                },
-            );
+            // Postprocess the scene before the overlay. Preserve the original blit as fallback.
+            #[cfg(target_os = "android")]
+            let reloaded_fx_drawn = self.present_reloaded_postfx(w_x, blit_y, w_w, w_h);
+            #[cfg(not(target_os = "android"))]
+            let reloaded_fx_drawn = false;
+            if !reloaded_fx_drawn {
+                self.gl.BlitFramebuffer(
+                    0,
+                    fb_height,
+                    fb_width,
+                    0,
+                    w_x,
+                    blit_y,
+                    w_x + w_w,
+                    blit_y + w_h,
+                    gl::COLOR_BUFFER_BIT,
+                    if cfg!(target_os = "android") {
+                        gl::NEAREST
+                    } else if self.next_render_state.interpolate_pixels.into() {
+                        gl::LINEAR
+                    } else {
+                        gl::NEAREST
+                    },
+                );
+            }
             debug_assert_eq!(self.gl.GetError(), 0);
             self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, fb_old as u32);
             debug_assert_eq!(self.gl.GetError(), 0);
