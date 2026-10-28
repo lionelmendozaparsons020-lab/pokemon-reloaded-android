@@ -472,7 +472,7 @@ impl Game {
                 game.renderer.set_draw_offset(dx, dy);
                 #[cfg(target_os = "android")]
                 draw_architectural_shadow(game, idx);
-                let result = if game.custom_draw_objects.contains(&instance.object_index.get()) {
+                let result = if game.custom_draw_objects.contains(&game.room.instance_list.get(idx).object_index.get()) {
                     // Custom draw event
                     game.run_instance_event(gml::ev::DRAW, 0, idx, idx, None)
                 } else {
