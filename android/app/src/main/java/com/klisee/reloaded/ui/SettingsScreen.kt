@@ -38,6 +38,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -86,6 +87,8 @@ fun SettingsScreen(
     var keepScreenOn by remember { mutableStateOf(prefs.keepScreenOn) }
     var keepAspect by remember { mutableStateOf(prefs.keepAspect) }
     var shaderMode by remember { mutableStateOf(prefs.shaderMode) }
+    var sunAngle by remember { mutableStateOf(prefs.sunAngle) }
+    var shadowStrength by remember { mutableStateOf(prefs.shadowStrength) }
     var gameLanguage by remember { mutableStateOf(prefs.gameLanguage) }
     var showLanguage by remember { mutableStateOf(false) }
     val discordUser by DiscordRpcManager.user.collectAsState()
@@ -268,8 +271,8 @@ fun SettingsScreen(
                 )
                 ChoiceRow(
                     icon = Icons.Filled.LightMode,
-                    title = "Ligero",
-                    subtitle = "Color, iluminación y brillo suave; consume menos recursos",
+                    title = "Iluminación ligera",
+                    subtitle = "Sol y relieve de píxeles, sin desenfoque ni sombras proyectadas",
                     selected = shaderMode == "lite",
                     items = 3,
                     index = 1,
@@ -281,8 +284,8 @@ fun SettingsScreen(
                 )
                 ChoiceRow(
                     icon = Icons.Filled.Opacity,
-                    title = "Mejorado",
-                    subtitle = "Iluminación, sombras aproximadas, bloom y rayos suaves (predeterminado)",
+                    title = "Sol y sombras 2D",
+                    subtitle = "Sombras de estructuras reconocidas, luz direccional y píxeles nítidos",
                     selected = shaderMode == "high",
                     items = 3,
                     index = 2,
@@ -291,6 +294,42 @@ fun SettingsScreen(
                         prefs.shaderMode = "high"
                         prefs.writeShaders(context.filesDir)
                     },
+                )
+                Text(
+                    "Dirección del sol: ${sunAngle}°",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Slider(
+                    value = sunAngle.toFloat(),
+                    onValueChange = {
+                        sunAngle = it.toInt()
+                        prefs.sunAngle = sunAngle
+                        prefs.writeShaders(context.filesDir)
+                    },
+                    valueRange = 0f..359f,
+                    enabled = shaderMode != "off",
+                )
+                Text(
+                    "Intensidad de sombras: ${shadowStrength}%",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Slider(
+                    value = shadowStrength.toFloat(),
+                    onValueChange = {
+                        shadowStrength = it.toInt()
+                        prefs.shadowStrength = shadowStrength
+                        prefs.writeShaders(context.filesDir)
+                    },
+                    valueRange = 0f..100f,
+                    enabled = shaderMode == "high",
+                )
+                Text(
+                    "Sombras reales de siluetas solo cuando casas, edificios o árboles son " +
+                        "sprites identificables. Los edificios dibujados directamente en el mapa " +
+                        "necesitan máscaras de altura que el motor todavía no tiene. " +
+                        "No es ray tracing RTX, pero no desenfoca la imagen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     "El cambio se aplicará la próxima vez que abras el juego.",
