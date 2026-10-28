@@ -114,6 +114,67 @@ impl<'a> LineIterator<'a> {
     }
 }
 
+// A real sprite-alpha silhouette cast in world coordinates (not a fullscreen
+// colour/blur approximation). We restrict casters to identifiable static
+// scenery objects; tiles and scripted backgrounds have no reliable height data.
+// The normal engine and its collision/save logic are not modified.
+#[cfg(target_os = "android")]
+fn draw_architectural_shadow(game: &mut Game, idx: usize) {
+    use std::sync::OnceLock;
+    static SUN: OnceLock<Option<(f64, f64)>> = OnceLock::new();
+    let Some((direction, strength)) = *SUN.get_or_init(|| {
+        let config = std::fs::read_to_string(
+            crate::android_main::storage_path("shaders.txt")
+        ).unwrap_or_else(|_| String::from("off"));
+        let mut lines = config.lines();
+        if lines.next().unwrap_or("off").trim() != "high" { return None; }
+        let angle = lines.next().and_then(|s| s.trim().parse::<f64>().ok())
+            .unwrap_or(135.0).clamp(0.0, 359.0).to_radians();
+        let strength = lines.next().and_then(|s| s.trim().parse::<f64>().ok())
+            .unwrap_or(55.0).clamp(0.0, 100.0) / 100.0;
+        if strength <= 0.0 { None } else { Some((angle, strength)) }
+    }) else { return };
+
+    let instance = game.room.instance_list.get(idx);
+    let Some(object) = game.assets.objects.get_asset(instance.object_index.get()) else { return };
+    let Some(sprite) = game.assets.sprites.get_asset(instance.sprite_index.get()) else { return };
+    // Deliberately do NOT include arbitrary actors, particles, UI, water,
+    // or roads: the previous shader darkened all of those indiscriminately.
+    let object_name = String::from_utf8_lossy(&object.name.0).to_lowercase();
+    let sprite_name = String::from_utf8_lossy(&sprite.name.0).to_lowercase();
+    let recognized = ["casa", "house", "edif", "building", "tejado", "roof",
+                      "arbol", "tree", "farol", "lamp", "poste"]
+        .iter()
+        .any(|part| object_name.contains(part) || sprite_name.contains(part));
+    if !recognized || sprite.width < 24 || sprite.height < 24 { return; }
+
+    let Some(frame) = sprite.get_atlas_ref(instance.image_index.get().floor().to_i32()) else {
+        return
+    };
+    let x: f64 = instance.x.get().into();
+    let y: f64 = instance.y.get().into();
+    let xscale: f64 = instance.image_xscale.get().into();
+    let yscale: f64 = instance.image_yscale.get().into();
+    let image_alpha: f64 = instance.image_alpha.get().into();
+    // Project the alpha silhouette close to the original footpoint, giving
+    // the roof a ground-plane shadow. The sun azimuth controls direction.
+    let height = sprite.height as f64 * yscale.abs();
+    let length = (height * 0.37).min(60.0);
+    let shadow_x = x - direction.cos() * length;
+    let shadow_foot_y = y + (sprite.height as f64 - sprite.origin_y as f64) * yscale;
+    let flattened = yscale * 0.22;
+    let shadow_y = shadow_foot_y
+        - (sprite.height as f64 - sprite.origin_y as f64) * flattened
+        - direction.sin() * length * 0.33;
+    let depth = instance.depth.get().into_inner() as f32;
+    game.renderer.set_depth(depth + 0.1);
+    game.renderer.draw_sprite(
+        frame, shadow_x, shadow_y, xscale, flattened, 0.0, 0x25272B,
+        (image_alpha * strength * 0.40).clamp(0.0, 0.55),
+    );
+    game.renderer.set_depth(depth);
+}
+
 impl Game {
     /// Draws all instances, tiles and backgrounds to the screen, taking all active views into account.
     /// Note that this function runs GML code associated with object draw events, so its usage must match GameMaker 8.
@@ -409,6 +470,8 @@ impl Game {
                 let dy: f64 = (instance.yprevious.get() - instance.y.get()).into();
                 game.renderer.set_depth(instance.depth.get().into_inner() as f32);
                 game.renderer.set_draw_offset(dx, dy);
+                #[cfg(target_os = "android")]
+                draw_architectural_shadow(game, idx);
                 let result = if game.custom_draw_objects.contains(&instance.object_index.get()) {
                     // Custom draw event
                     game.run_instance_event(gml::ev::DRAW, 0, idx, idx, None)
