@@ -2,7 +2,7 @@ name: Build Mods y Cheats 0.3.9
 
 on:
   push:
-    branches: [mods-cheats-039-ingame, mods-isolated-10551, mods-masterball-safe-039, mods-pokemon-moderno-v2-039, mods-shiny-ntv-sprites-v2-039, mods-event-pokemon-safe-039, mods-catalogos-pokemon-objetos-039, mods-catalogos-partidas-6-slots-039]
+    branches: [mods-cheats-039-ingame, mods-isolated-10551, mods-masterball-safe-039, mods-pokemon-moderno-v2-039, mods-shiny-ntv-sprites-v2-039, mods-event-pokemon-safe-039, mods-catalogos-pokemon-objetos-039, mods-catalogos-partidas-6-slots-039, fix-instalacion-mods-catalogos-v21-039]
   workflow_dispatch:
 
 permissions:
