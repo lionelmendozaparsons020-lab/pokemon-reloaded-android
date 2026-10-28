@@ -206,7 +206,7 @@ class Preferences(context: Context) {
             prefs.edit().putBoolean("showFps", value).apply()
         }
 
-    /** Preset persistente de shaders; se carga al iniciar el motor GLES. */
+    /** OpenGL ES 3.0 presets: no fuzzy fullscreen filtering; advanced mode uses caster shadows. */
     var shaderMode: String
         get() {
             val mode = prefs.getString("shaderMode", "high") ?: "high"
@@ -217,9 +217,22 @@ class Preferences(context: Context) {
             prefs.edit().putString("shaderMode", safe).apply()
         }
 
-    /** Escribe el archivo que el motor nativo lee al arrancar. */
+    /** Azimuth of the virtual sun, in degrees. Only affects shadows and scene lighting. */
+    var sunAngle: Int
+        get() = prefs.getInt("sunAngle", 135).coerceIn(0, 359)
+        set(value) { prefs.edit().putInt("sunAngle", value.coerceIn(0, 359)).apply() }
+
+    /** Strength of sun shadows, percentage; zero completely disables projected shadows. */
+    var shadowStrength: Int
+        get() = prefs.getInt("shadowStrength", 55).coerceIn(0, 100)
+        set(value) { prefs.edit().putInt("shadowStrength", value.coerceIn(0, 100)).apply() }
+
+    /** Startup settings for the native GLES render + scene-specific shadow casting. */
     fun writeShaders(filesDir: File) {
-        writeAtomicText(File(filesDir, "shaders.txt"), shaderMode + "\n")
+        writeAtomicText(
+            File(filesDir, "shaders.txt"),
+            shaderMode + "\n" + sunAngle + "\n" + shadowStrength + "\n",
+        )
     }
 
     /** Mirrors the video mode into the file the emulator reads at startup. */
