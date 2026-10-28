@@ -140,8 +140,8 @@ fn draw_architectural_shadow(game: &mut Game, idx: usize) {
     let Some(sprite) = game.assets.sprites.get_asset(instance.sprite_index.get()) else { return };
     // Deliberately do NOT include arbitrary actors, particles, UI, water,
     // or roads: the previous shader darkened all of those indiscriminately.
-    let object_name = String::from_utf8_lossy(&object.name.0).to_lowercase();
-    let sprite_name = String::from_utf8_lossy(&sprite.name.0).to_lowercase();
+    let object_name = object.name.decode_utf8().to_lowercase();
+    let sprite_name = sprite.name.decode_utf8().to_lowercase();
     let recognized = ["casa", "house", "edif", "building", "tejado", "roof",
                       "arbol", "tree", "farol", "lamp", "poste"]
         .iter()
