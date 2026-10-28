@@ -206,6 +206,22 @@ class Preferences(context: Context) {
             prefs.edit().putBoolean("showFps", value).apply()
         }
 
+    /** Preset persistente de shaders; se carga al iniciar el motor GLES. */
+    var shaderMode: String
+        get() {
+            val mode = prefs.getString("shaderMode", "high") ?: "high"
+            return if (mode in setOf("off", "lite", "high")) mode else "high"
+        }
+        set(value) {
+            val safe = if (value in setOf("off", "lite", "high")) value else "high"
+            prefs.edit().putString("shaderMode", safe).apply()
+        }
+
+    /** Escribe el archivo que el motor nativo lee al arrancar. */
+    fun writeShaders(filesDir: File) {
+        writeAtomicText(File(filesDir, "shaders.txt"), shaderMode + "\n")
+    }
+
     /** Mirrors the video mode into the file the emulator reads at startup. */
     fun writeVideo(filesDir: File) = writeVideoFile(filesDir, keepAspect, renderMode, detectedRefreshRate(), showFps)
 

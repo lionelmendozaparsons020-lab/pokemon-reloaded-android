@@ -18,6 +18,7 @@ object Emulator {
         }
         prefs.writeControls(context.filesDir, connectedPads(context).isNotEmpty())
         prefs.writeTouch(context.filesDir)
+        prefs.writeShaders(context.filesDir)
         prefs.writeVideo(context.filesDir)
         prefs.writeTouchLayouts(context.filesDir)
         prefs.writeTouchAppearance(context.filesDir)

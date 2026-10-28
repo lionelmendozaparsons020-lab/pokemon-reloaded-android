@@ -85,6 +85,7 @@ fun SettingsScreen(
     var status by remember(revision) { mutableStateOf(repo.status()) }
     var keepScreenOn by remember { mutableStateOf(prefs.keepScreenOn) }
     var keepAspect by remember { mutableStateOf(prefs.keepAspect) }
+    var shaderMode by remember { mutableStateOf(prefs.shaderMode) }
     var gameLanguage by remember { mutableStateOf(prefs.gameLanguage) }
     var showLanguage by remember { mutableStateOf(false) }
     val discordUser by DiscordRpcManager.user.collectAsState()
@@ -248,6 +249,53 @@ fun SettingsScreen(
                     items = 1,
                     index = 0,
                     onClick = onControls,
+                )
+            }
+
+            SettingsGroup("Gráficos · Shaders") {
+                ChoiceRow(
+                    icon = Icons.Filled.Tune,
+                    title = "Desactivado",
+                    subtitle = "Gráficos originales, sin efectos adicionales",
+                    selected = shaderMode == "off",
+                    items = 3,
+                    index = 0,
+                    onSelect = {
+                        shaderMode = "off"
+                        prefs.shaderMode = "off"
+                        prefs.writeShaders(context.filesDir)
+                    },
+                )
+                ChoiceRow(
+                    icon = Icons.Filled.LightMode,
+                    title = "Ligero",
+                    subtitle = "Color, iluminación y brillo suave; consume menos recursos",
+                    selected = shaderMode == "lite",
+                    items = 3,
+                    index = 1,
+                    onSelect = {
+                        shaderMode = "lite"
+                        prefs.shaderMode = "lite"
+                        prefs.writeShaders(context.filesDir)
+                    },
+                )
+                ChoiceRow(
+                    icon = Icons.Filled.Opacity,
+                    title = "Mejorado",
+                    subtitle = "Iluminación, sombras aproximadas, bloom y rayos suaves (predeterminado)",
+                    selected = shaderMode == "high",
+                    items = 3,
+                    index = 2,
+                    onSelect = {
+                        shaderMode = "high"
+                        prefs.shaderMode = "high"
+                        prefs.writeShaders(context.filesDir)
+                    },
+                )
+                Text(
+                    "El cambio se aplicará la próxima vez que abras el juego.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
