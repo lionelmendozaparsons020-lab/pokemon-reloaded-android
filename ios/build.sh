@@ -19,7 +19,7 @@ APP="$OUT/Payload/Reloaded.app"
 mkdir -p "$APP"
 xcrun --sdk "$SDK" clang -target "$CLANG_TARGET" -isysroot "$SDKROOT" -fobjc-arc -fblocks -O2 -Wno-deprecated-declarations \
   "$ROOT/ios/App.m" "$ROOT/src/OpenGMK/target/$TARGET/release/libgm8emulator.a" \
-  -framework UIKit -framework QuartzCore -framework OpenGLES -framework AVFoundation \
+  -framework UIKit -framework CoreGraphics -framework QuartzCore -framework OpenGLES -framework AVFoundation \
   -framework AudioToolbox -framework UniformTypeIdentifiers -framework Foundation \
   -framework CoreFoundation -framework Security -framework SystemConfiguration \
   -lc++ -liconv -lz -lresolv -o "$APP/Reloaded"

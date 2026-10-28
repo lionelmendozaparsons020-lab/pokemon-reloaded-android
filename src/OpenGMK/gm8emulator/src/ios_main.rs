@@ -123,7 +123,8 @@ fn smoke_test(w:u32,h:u32)->Result<i32,String> {
     if !matches!(events.as_slice(), [InputEvent::KeyDown{key:Key::Z,text:None},InputEvent::KeyUp{key:Key::Z},InputEvent::Text('ñ')]) {
         return Err(format!("Falló la cola de controles: {events:?}"));
     }
-    eprintln!("IOS_SMOKE_OK: shader, framebuffer, readback and input");
+    crate::game::audio::ios::smoke_test()?;
+    eprintln!("IOS_SMOKE_OK: shader, framebuffer, readback, input and RemoteIO PCM callback");
     std::thread::sleep(std::time::Duration::from_secs(8));
     Ok(0)
 }

@@ -615,7 +615,8 @@ impl RendererImpl {
 
             gl.DepthFunc(gl::LEQUAL);
 
-            // Use DX provoking vertex convention
+            // ES 3 on iOS has a fixed provoking vertex convention and no glProvokingVertex.
+            #[cfg(not(target_os = "ios"))]
             gl.ProvokingVertex(gl::FIRST_VERTEX_CONVENTION);
 
             // Create and bind the VBO once
