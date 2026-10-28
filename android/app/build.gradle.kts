@@ -60,7 +60,7 @@ android {
         // AAudio exists since Android 8 (API 26), which is the real floor of the engine.
         minSdk = if (controlsBuild) 29 else 26
         targetSdk = 36
-        versionCode = if (controlsBuild) 20 else 16
+        versionCode = if (controlsBuild) 21 else 16
         versionName = appVersion
         manifestPlaceholders["launcherLabel"] = if (controlsBuild) "Pokemon Reloaded Controles" else "@string/app_name"
         ndk { abiFilters += buildAbis }
