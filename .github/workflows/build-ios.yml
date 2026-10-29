@@ -15,10 +15,6 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Start iPhone simulator while the app compiles
-        run: |
-          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import sys,json;d=[v for vs in json.load(sys.stdin)["devices"].values() for v in vs if "iPhone" in v["name"]];d.sort(key=lambda v:v["name"]!="iPhone 16 Pro");print(d[0]["udid"])')
-          xcrun simctl boot "$DEVICE" || true
       - name: Rust toolchain
         run: rustup toolchain install 1.99.0 --profile minimal && rustup default 1.99.0
       - uses: actions/cache/restore@v4

@@ -40,7 +40,9 @@
 -(void)reload{
     self.selected=nil;self.sizeSlider.enabled=NO;
     for(UIView *v in self.preview.subviews)[v removeFromSuperview];
-    char json[32768]={0};gm_ios_layout_json(1<<self.profiles.selectedSegmentIndex,self.preview.bounds.size.width,self.preview.bounds.size.height,json,sizeof(json));
+    // Rust defines MENU as bit 0; the UI puts Menús last.
+    const uint8_t contexts[]={2,4,8,16,32,64,128,1};
+    char json[32768]={0};gm_ios_layout_json(contexts[self.profiles.selectedSegmentIndex],self.preview.bounds.size.width,self.preview.bounds.size.height,json,sizeof(json));
     self.controls=[NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:json] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     for(NSDictionary *c in self.controls){if(![c[@"active"] boolValue])continue;
         UIButton *b=[UIButton buttonWithType:UIButtonTypeCustom];b.accessibilityIdentifier=c[@"name"];
