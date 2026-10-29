@@ -24,6 +24,7 @@ xcrun --sdk "$SDK" clang -target "$CLANG_TARGET" -isysroot "$SDKROOT" -fobjc-arc
   -framework CoreFoundation -framework Security -framework SystemConfiguration \
   -lc++ -liconv -lz -lresolv -o "$APP/Reloaded"
 cp "$ROOT/ios/Info.plist" "$APP/Info.plist"
+xcrun --sdk macosx swift -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$ROOT/ios/icon.swift" "$APP"
 cp "$ROOT/android/app/src/main/assets/soundfont.sf2" "$APP/soundfont.sf2"
 mkdir -p "$APP/Controls"
 cp "$ROOT/android/app/src/main/assets/"*.png "$APP/Controls/"

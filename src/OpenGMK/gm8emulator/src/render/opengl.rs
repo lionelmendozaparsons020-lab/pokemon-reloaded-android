@@ -4200,6 +4200,8 @@ impl RendererTrait for RendererImpl {
             // Present buffer
             // Note: Game Maker always presents the backbuffer, even when the target is a surface.
             self.imp.swap_buffers();
+            #[cfg(target_os = "ios")]
+            crate::ios_main::presented_frame();
 
             // On Nvidia/AMD cards, unless the emulator is running in admin mode, if it is screenshared on Discord,
             // SwapBuffers will return TRUE i.e. no error, but glGetError will return GL_INVALID_OPERATION.
@@ -4248,6 +4250,8 @@ impl RendererTrait for RendererImpl {
             self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, fb_old as u32);
             self.gl.Enable(gl::SCISSOR_TEST);
             self.imp.swap_buffers();
+            #[cfg(target_os = "ios")]
+            crate::ios_main::presented_frame();
             self.gl.GetError();
         }
     }

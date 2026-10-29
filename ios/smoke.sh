@@ -12,6 +12,9 @@ for i in $(seq 1 120); do
   if [[ ! -f "$ROOT/ios/out/verification/simulator.png" ]] && grep -q IOS_STARTUP_OK "$CONTAINER/Documents/emulator.log" 2>/dev/null; then
     xcrun simctl io "$DEVICE" screenshot "$ROOT/ios/out/verification/simulator.png"
   fi
+  if [[ -f "$CONTAINER/Documents/settings-ready.txt" && ! -f "$ROOT/ios/out/verification/editor.png" ]]; then
+    xcrun simctl io "$DEVICE" screenshot "$ROOT/ios/out/verification/editor.png"
+  fi
   if [[ -f "$CONTAINER/Documents/smoke-result.txt" ]]; then break; fi
   sleep 1
 done

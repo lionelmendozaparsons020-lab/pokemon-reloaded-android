@@ -52,6 +52,8 @@ pub extern "C" fn gm_ios_tap(code: u32) { if let Some(key)=key(code){touch::tap_
 pub extern "C" fn gm_ios_ime_inset(pixels: u32) {crate::touch_controls::set_ime_inset(pixels);}
 
 static ACTIVE: AtomicBool = AtomicBool::new(true);
+static FIRST_FRAME: AtomicBool = AtomicBool::new(false);
+pub(crate) fn presented_frame() { if !FIRST_FRAME.swap(true,Ordering::Relaxed) { stage("Juego iniciado"); } }
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static GL_LOCK: Mutex<()> = Mutex::new(());
 static WAKE: Condvar = Condvar::new();
@@ -142,6 +144,8 @@ pub extern "C" fn gm_ios_close() { platform::push_input(InputEvent::CloseRequest
 pub unsafe extern "C" fn gm_ios_run(view: *mut c_void, w: u32, h: u32, root: *const c_char, font: *const c_char, smoke: bool) -> i32 {
     if RUNNING.swap(true, Ordering::AcqRel) { return error("Ya hay una sesión en curso"); }
     let result=std::panic::catch_unwind(|| -> Result<i32,String> {
+        std::env::set_var("RUST_BACKTRACE","1");
+        FIRST_FRAME.store(false,Ordering::Relaxed);
         touch::cancel();
         platform::drain_pending_input(); platform::set_native_window(view,w,h);
         load_settings();

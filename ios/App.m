@@ -176,10 +176,10 @@ void gm_ios_haptic(void) {
         NSLog(@"[startup] motor en hilo dedicado; stack=%lu KiB",(unsigned long)(NSThread.currentThread.stackSize/1024));
         int result=gm_ios_run((__bridge void *)canvas,w,h,root.fileSystemRepresentation,font.fileSystemRepresentation,self.smoke);
         NSString *message=result==0?@"Sesión finalizada":EngineError();
-        if(self.smoke){[ (result==0?@"PASS":message) writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];}
+        if(self.smoke && result!=0){[ message writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];}
         dispatch_async(dispatch_get_main_queue(),^{
             [self.pump invalidate];self.pump=nil;[self.canvas resignFirstResponder];
-            [self dismissViewControllerAnimated:YES completion:^{if(result!=0){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"No se pudo iniciar" message:message preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController:a animated:YES completion:nil];}}];
+            [self dismissViewControllerAnimated:YES completion:^{if(self.smoke && result==0){[UIApplication.sharedApplication.keyWindow.rootViewController performSelector:@selector(testSettings)];}if(result!=0){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"No se pudo iniciar" message:message preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController:a animated:YES completion:nil];}}];
         });
     }}];engine.name=@"Reloaded Engine";engine.stackSize=8*1024*1024;[engine start];
 }
@@ -246,6 +246,27 @@ void gm_ios_haptic(void) {
 }
 -(void)viewWillAppear:(BOOL)animated{[super viewWillAppear:animated];NSString *root=[self gameRoot];self.playButton.enabled=root && gm_ios_has_game(root.fileSystemRepresentation);self.playButton.alpha=self.playButton.enabled?1:.4;}
 -(void)viewDidAppear:(BOOL)animated{[super viewDidAppear:animated];static BOOL tested=NO;if(!tested && [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"]){tested=YES;GameController *game=[GameController new];game.smoke=YES;game.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:game animated:NO completion:nil];}}
+-(void)testSettings {
+    UINavigationController *nav=[[UINavigationController alloc]initWithRootViewController:[[ReloadedSettings alloc]initWithStyle:UITableViewStyleInsetGrouped]];
+    nav.modalPresentationStyle=UIModalPresentationFullScreen;
+    [self presentViewController:nav animated:NO completion:^{
+        ControlEditor *editor=[ControlEditor new];[nav pushViewController:editor animated:NO];[editor.view layoutIfNeeded];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+            @try {
+                NSAssert(editor.controls.count>20,@"No se cargó la vista de controles");
+                UIButton *z=nil;for(UIButton *b in editor.preview.subviews)if([b.accessibilityIdentifier isEqual:@"z"]){z=b;break;}
+                NSAssert(z!=nil,@"Falta Z en el editor");
+                [editor select:z];z.center=CGPointMake(editor.preview.bounds.size.width*.80,editor.preview.bounds.size.height*.76);[editor store:z scale:1.25];[editor reload];
+                NSDictionary *found=nil;for(NSDictionary *c in editor.controls)if([c[@"name"] isEqual:@"z"]){found=c;break;}
+                NSAssert(fabs([found[@"x"] doubleValue]-.80)<.01,@"No se guardó la posición");
+                [editor.entries removeObjectForKey:@"world z"];[editor persist];[editor reload];
+                NSLog(@"IOS_SETTINGS_OK: editor shares Android layout, move/scale persisted and reloaded");
+                [@"READY" writeToFile:[Documents() stringByAppendingPathComponent:@"settings-ready.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{[@"PASS" writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];});
+            } @catch(NSException *e) { [e.description writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
+        });
+    }];
+}
 -(void)play{GameController *game=[GameController new];game.gameRoot=[self gameRoot];game.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:game animated:YES completion:nil];}
 -(void)settings{UINavigationController *nav=[[UINavigationController alloc]initWithRootViewController:[[ReloadedSettings alloc]initWithStyle:UITableViewStyleInsetGrouped]];nav.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:nav animated:YES completion:nil];}
 -(void)importGame{if(self.importing)return;UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]initForOpeningContentTypes:@[UTTypeZIP] asCopy:NO];picker.delegate=self;[self presentViewController:picker animated:YES completion:nil];}
