@@ -1,6 +1,12 @@
 // Render the repository's Android vector launcher icon with CoreGraphics.
 // Geometry/colors match res/drawable/ic_launcher_{background,foreground}.xml.
 import AppKit
+func color(_ n: Int) -> CGColor {
+    let red: CGFloat = CGFloat((n >> 16) & 255) / 255.0
+    let green: CGFloat = CGFloat((n >> 8) & 255) / 255.0
+    let blue: CGFloat = CGFloat(n & 255) / 255.0
+    return CGColor(red: red, green: green, blue: blue, alpha: 1.0)
+}
 let directory = CommandLine.arguments[1]
 for size in [120, 152, 167, 180, 1024] {
     let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -8,15 +14,10 @@ for size in [120, 152, 167, 180, 1024] {
                             bytesPerRow: size * 4, space: colorSpace,
                             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
     context.scaleBy(x: CGFloat(size) / 108, y: CGFloat(size) / 108)
-    let colors = [0x5A5A5A, 0x3C3C3C, 0x232323].map { n in
-        CGColor(red: CGFloat((n >> 16) & 255) / 255, green: CGFloat((n >> 8) & 255) / 255,
-                blue: CGFloat(n & 255) / 255, alpha: 1)
-    }
+    let colors: [CGColor] = [color(0x5A5A5A), color(0x3C3C3C), color(0x232323)]
     let gradient = CGGradient(colorsSpace: colorSpace, colors: colors as CFArray, locations: [0, 0.5, 1])!
     context.drawRadialGradient(gradient, startCenter: CGPoint(x: 54, y: 54), startRadius: 0,
                               endCenter: CGPoint(x: 54, y: 54), endRadius: 86, options: .drawsAfterEndLocation)
-    func color(_ n: Int) -> CGColor { CGColor(red: CGFloat((n >> 16) & 255) / 255,
-        green: CGFloat((n >> 8) & 255) / 255, blue: CGFloat(n & 255) / 255, alpha: 1) }
     func circle(_ radius: CGFloat) -> CGRect { CGRect(x: 54-radius, y: 54-radius, width: radius*2, height: radius*2) }
     context.setStrokeColor(color(0x9E9E9E)); context.setLineWidth(1.6); context.strokeEllipse(in: circle(28.4))
     context.setFillColor(color(0xF1F1F1)); context.fillEllipse(in: circle(25.4))
