@@ -20,7 +20,15 @@ fn keyboard(visible: bool) { unsafe { gm_ios_show_keyboard(visible); } }
 pub unsafe extern "C" fn gm_ios_configure(documents: *const c_char) {
     if let Ok(p)=path(documents) { *STORAGE.lock().unwrap()=Some(p); }
 }
+static SUN: Mutex<Option<(f64,f64)>> = Mutex::new(None);
+pub(crate) fn sun_settings() -> Option<(f64,f64)> { *SUN.lock().unwrap() }
 fn load_settings() {
+    let config=std::fs::read_to_string(storage_path("shaders.txt")).unwrap_or_default();
+    let mut lines=config.lines();
+    let enabled=lines.next().unwrap_or("off")=="high";
+    let angle=lines.next().and_then(|n|n.parse::<f64>().ok()).unwrap_or(135.0).clamp(0.0,359.0).to_radians();
+    let strength=lines.next().and_then(|n|n.parse::<f64>().ok()).unwrap_or(55.0).clamp(0.0,100.0)/100.0;
+    *SUN.lock().unwrap()=enabled.then_some((angle,strength));
     settings::load_touch();
     crate::touch_controls::load_layout(&std::fs::read_to_string(storage_path("touch-layout.conf")).unwrap_or_default());
     crate::touch_appearance::load(&std::fs::read_to_string(storage_path("touch-appearance.conf")).unwrap_or_default());

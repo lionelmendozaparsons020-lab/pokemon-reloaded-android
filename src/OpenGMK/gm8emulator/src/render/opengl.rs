@@ -4119,6 +4119,8 @@ impl RendererTrait for RendererImpl {
                 // presented frame is not enough: the game paints a small "Loading…" screen of its own
                 // before the music starts, so the signal is the first sound being heard (with a
                 // generous fallback in case a device has no audio at all).
+                #[cfg(target_os = "android")]
+                {
                 static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                 static FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
                 if !READY.load(std::sync::atomic::Ordering::Relaxed) {
@@ -4127,6 +4129,7 @@ impl RendererTrait for RendererImpl {
                         READY.store(true, std::sync::atomic::Ordering::Relaxed);
                         let _ = std::fs::write(mobile::storage_path("game-ready"), b"");
                     }
+                }
                 }
             }
 

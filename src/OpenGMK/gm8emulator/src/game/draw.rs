@@ -120,9 +120,11 @@ impl<'a> LineIterator<'a> {
 // The normal engine and its collision/save logic are not modified.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 fn draw_architectural_shadow(game: &mut Game, idx: usize) {
+    #[cfg(target_os = "android")]
+    let sun = {
     use std::sync::OnceLock;
     static SUN: OnceLock<Option<(f64, f64)>> = OnceLock::new();
-    let Some((direction, strength)) = *SUN.get_or_init(|| {
+    *SUN.get_or_init(|| {
         let config = std::fs::read_to_string(
             crate::android_main::storage_path("shaders.txt")
         ).unwrap_or_else(|_| String::from("off"));
@@ -133,7 +135,12 @@ fn draw_architectural_shadow(game: &mut Game, idx: usize) {
         let strength = lines.next().and_then(|s| s.trim().parse::<f64>().ok())
             .unwrap_or(55.0).clamp(0.0, 100.0) / 100.0;
         if strength <= 0.0 { None } else { Some((angle, strength)) }
-    }) else { return };
+    })
+
+    };
+    #[cfg(target_os = "ios")]
+    let sun = crate::ios_main::sun_settings();
+    let Some((direction, strength)) = sun else { return };
 
     let instance = game.room.instance_list.get(idx);
     let Some(object) = game.assets.objects.get_asset(instance.object_index.get()) else { return };
