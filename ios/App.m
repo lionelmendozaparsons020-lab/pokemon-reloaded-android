@@ -6,6 +6,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <dlfcn.h>
+#import <mach/mach.h>
 #import "Bridge.h"
 
 static NSString *Documents(void) { return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject; }
@@ -76,16 +77,35 @@ void gm_ios_audio_stop(void) {
     [audioLock unlock];
 }
 
+
+static NSString *const StageNotification=@"ReloadedLoadingStage";
+static NSString *const KeyboardNotification=@"ReloadedKeyboard";
+void gm_ios_loading_stage(const char *text) {
+    @autoreleasepool {
+        NSString *stage=[NSString stringWithUTF8String:text] ?: @"Cargando";
+        task_vm_info_data_t vm={0};mach_msg_type_number_t count=TASK_VM_INFO_COUNT;
+        kern_return_t result=task_info(mach_task_self(),TASK_VM_INFO,(task_info_t)&vm,&count);
+        NSLog(@"[startup] %@ | memoria=%llu MiB",stage,result==KERN_SUCCESS?(unsigned long long)(vm.phys_footprint/1048576):0);
+        [stage writeToFile:[Documents() stringByAppendingPathComponent:@"last-stage.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        dispatch_async(dispatch_get_main_queue(),^{[NSNotificationCenter.defaultCenter postNotificationName:StageNotification object:stage];});
+    }
+}
+void gm_ios_show_keyboard(bool visible) {
+    dispatch_async(dispatch_get_main_queue(),^{[NSNotificationCenter.defaultCenter postNotificationName:KeyboardNotification object:@(visible)];});
+}
+void gm_ios_haptic(void) {
+    dispatch_async(dispatch_get_main_queue(),^{UIImpactFeedbackGenerator *f=[[UIImpactFeedbackGenerator alloc]initWithStyle:UIImpactFeedbackStyleSoft];[f impactOccurred];});
+}
 @interface GameView : UIView<UIKeyInput>
-@property(nonatomic)BOOL rightClick;
-@property(nonatomic,strong)UITouch *pointer;
 @end
 @implementation GameView
-+(Class)layerClass {return CAEAGLLayer.class;}
++(Class)layerClass{return CAEAGLLayer.class;}
 -(instancetype)initWithFrame:(CGRect)frame {
-    if((self=[super initWithFrame:frame])){self.multipleTouchEnabled=YES;self.contentScaleFactor=MIN(UIScreen.mainScreen.scale,2.0);
-        CAEAGLLayer *layer=(CAEAGLLayer *)self.layer;layer.opaque=YES;layer.drawableProperties=@{kEAGLDrawablePropertyRetainedBacking:@NO,kEAGLDrawablePropertyColorFormat:kEAGLColorFormatRGBA8};}
-    return self;
+    if((self=[super initWithFrame:frame])){
+        self.multipleTouchEnabled=YES;self.contentScaleFactor=MIN(UIScreen.mainScreen.scale,2.0);
+        CAEAGLLayer *layer=(CAEAGLLayer *)self.layer;layer.opaque=YES;
+        layer.drawableProperties=@{kEAGLDrawablePropertyRetainedBacking:@NO,kEAGLDrawablePropertyColorFormat:kEAGLColorFormatRGBA8};
+    }return self;
 }
 -(BOOL)canBecomeFirstResponder{return YES;}
 -(BOOL)hasText{return YES;}
@@ -94,116 +114,110 @@ void gm_ios_audio_stop(void) {
 -(UITextAutocorrectionType)autocorrectionType{return UITextAutocorrectionTypeNo;}
 -(UITextAutocapitalizationType)autocapitalizationType{return UITextAutocapitalizationTypeNone;}
 -(void)insertText:(NSString *)text {
-    if([text isEqualToString:@"\n"]){gm_ios_key(13,true);gm_ios_key(13,false);[self resignFirstResponder];return;}
+    if([text isEqualToString:@"\n"]){gm_ios_tap(13);[self resignFirstResponder];return;}
     NSData *utf32=[text dataUsingEncoding:NSUTF32LittleEndianStringEncoding];
     const uint32_t *codes=utf32.bytes;for(NSUInteger i=0;i<utf32.length/4;i++)gm_ios_text(codes[i]);
 }
--(void)deleteBackward{gm_ios_key(8,true);gm_ios_key(8,false);}
--(void)sendPointer:(uint32_t)kind touch:(UITouch *)touch {
-    CGPoint p=[touch locationInView:self];gm_ios_pointer(kind,p.x*self.contentScaleFactor,p.y*self.contentScaleFactor,self.rightClick);
+-(void)deleteBackward{gm_ios_tap(8);}
+-(void)send:(uint32_t)kind touches:(NSSet<UITouch *> *)touches {
+    for(UITouch *touch in touches){CGPoint p=[touch locationInView:self];
+        // UITouch identity is stable through this gesture; preserve all simultaneous fingers.
+        int32_t pointer=(int32_t)((uintptr_t)(__bridge void *)touch & 0x7fffffff);
+        gm_ios_touch(kind,pointer,p.x*self.contentScaleFactor,p.y*self.contentScaleFactor);
+    }
 }
--(void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {if(!self.pointer){self.pointer=touches.anyObject;[self sendPointer:1 touch:self.pointer];}}
--(void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {if(self.pointer && [touches containsObject:self.pointer])[self sendPointer:0 touch:self.pointer];}
--(void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {if(self.pointer && [touches containsObject:self.pointer]){[self sendPointer:2 touch:self.pointer];self.pointer=nil;}}
--(void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{[self touchesEnded:touches withEvent:event];}
-@end
-
-@interface DirectionPad : UIView
-@property(nonatomic,strong)UITouch *tracked;
-@property(nonatomic)uint8_t held;
--(void)releaseDirections;
-@end
-@implementation DirectionPad
--(instancetype)initWithFrame:(CGRect)frame {
-    if((self=[super initWithFrame:frame])){self.backgroundColor=[UIColor colorWithWhite:0.13 alpha:0.8];self.layer.cornerRadius=frame.size.width/2;self.multipleTouchEnabled=YES;
-        UILabel *mark=[[UILabel alloc]initWithFrame:self.bounds];mark.text=@"✥";mark.font=[UIFont systemFontOfSize:70 weight:UIFontWeightLight];mark.textAlignment=NSTextAlignmentCenter;mark.textColor=UIColor.whiteColor;mark.userInteractionEnabled=NO;mark.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;[self addSubview:mark];}
-    return self;
-}
--(void)apply:(uint8_t)mask {uint32_t keys[]={37,39,38,40};for(int i=0;i<4;i++){BOOL old=(self.held&(1<<i))!=0;BOOL now=(mask&(1<<i))!=0;if(old!=now)gm_ios_key(keys[i],now);}self.held=mask;}
--(void)updateTouch:(UITouch *)touch {CGPoint p=[touch locationInView:self];CGFloat dx=(p.x-CGRectGetMidX(self.bounds))/(self.bounds.size.width/2),dy=(p.y-CGRectGetMidY(self.bounds))/(self.bounds.size.height/2);uint8_t mask=0;if(dx<-.22)mask|=1;if(dx>.22)mask|=2;if(dy<-.22)mask|=4;if(dy>.22)mask|=8;[self apply:mask];}
--(void)releaseDirections{[self apply:0];self.tracked=nil;}
--(void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{if(!self.tracked){self.tracked=touches.anyObject;[self updateTouch:self.tracked];}}
--(void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{if(self.tracked && [touches containsObject:self.tracked])[self updateTouch:self.tracked];}
--(void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{if([touches containsObject:self.tracked])[self releaseDirections];}
--(void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{[self touchesEnded:touches withEvent:event];}
+-(void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{[self send:1 touches:touches];}
+-(void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{[self send:0 touches:touches];}
+-(void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{[self send:2 touches:touches];}
+-(void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event{gm_ios_release_all();}
 @end
 
 @interface GameController : UIViewController
 @property(nonatomic,copy)NSString *gameRoot;
-@property(nonatomic)BOOL smoke;
-@property(nonatomic)BOOL started;
+@property(nonatomic)BOOL smoke,started;
 @property(nonatomic,strong)GameView *canvas;
-@property(nonatomic,strong)UIView *controls;
-@property(nonatomic,strong)DirectionPad *pad;
-@property(nonatomic,strong)UIView *extraKeys;
-@property(nonatomic,strong)UIButton *mouseToggle;
+@property(nonatomic,strong)UILabel *loading;
+@property(nonatomic,strong)UIButton *menu;
+@property(nonatomic,strong)CADisplayLink *pump;
 @end
 @implementation GameController
 -(void)viewDidLoad {
     [super viewDidLoad];self.view.backgroundColor=UIColor.blackColor;
-    self.canvas=[[GameView alloc]initWithFrame:self.view.bounds];self.canvas.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;[self.view addSubview:self.canvas];
-    self.controls=[[UIView alloc]initWithFrame:self.view.bounds];self.controls.userInteractionEnabled=NO; // Buttons are added directly to the root; empty areas reach the canvas.
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pause) name:UIApplicationWillResignActiveNotification object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(resume) name:UIApplicationDidBecomeActiveNotification object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(audioInterrupted:) name:AVAudioSessionInterruptionNotification object:nil];
-    self.pad=[[DirectionPad alloc]initWithFrame:CGRectMake(0,0,130,130)];[self.view addSubview:self.pad];
-    for(NSArray *item in @[@[@"Z",@90],@[@"X",@88],@[@"C",@67],@[@"V",@86],@[@"A",@65],@[@"S",@83],@[@"D",@68],@[@"8",@56]])[self addKey:item[0] code:[item[1]unsignedIntValue] parent:self.view];
-    [self addKey:@"Menú" code:27 parent:self.view];[self addKey:@"Enter" code:13 parent:self.view];[self addKey:@"Correr" code:16 parent:self.view];
-    [self addAction:@"Teclado" action:@selector(keyboard) tag:1001];
-    [self addAction:@"Más teclas" action:@selector(moreKeys) tag:1002];
-    self.mouseToggle=[self addAction:@"Clic: izq." action:@selector(toggleMouse) tag:1003];
-    [self addAction:@"Salir" action:@selector(askExit) tag:1004];
-    self.extraKeys=[[UIView alloc]initWithFrame:CGRectZero];self.extraKeys.backgroundColor=[UIColor colorWithWhite:.04 alpha:.95];self.extraKeys.layer.cornerRadius=16;self.extraKeys.hidden=YES;[self.view addSubview:self.extraKeys];
-    for(NSArray *item in @[@[@"1",@49],@[@"2",@50],@[@"3",@51],@[@"4",@52],@[@"5",@53],@[@"6",@54],@[@"7",@55],@[@"9",@57],@[@"0",@48],@[@"B",@66],@[@"E",@69],@[@"M",@77],@[@"Q",@81],@[@"R",@82],@[@"F",@70],@[@"Espacio",@32],@[@"Tab",@9],@[@"F1",@112],@[@"F2",@113],@[@"F3",@114],@[@"F4",@115],@[@"F5",@116],@[@"F6",@117],@[@"F7",@118]])[self addKey:item[0] code:[item[1]unsignedIntValue] parent:self.extraKeys];
+    self.canvas=[[GameView alloc]initWithFrame:CGRectZero];[self.view addSubview:self.canvas];
+    self.menu=[UIButton buttonWithType:UIButtonTypeSystem];[self.menu setTitle:@"•••" forState:UIControlStateNormal];self.menu.tintColor=UIColor.whiteColor;
+    self.menu.backgroundColor=[UIColor colorWithWhite:.05 alpha:.65];self.menu.layer.cornerRadius=12;[self.menu addTarget:self action:@selector(options) forControlEvents:UIControlEventTouchUpInside];[self.view addSubview:self.menu];
+    self.loading=[UILabel new];self.loading.text=@"Preparando juego…";self.loading.textColor=UIColor.whiteColor;self.loading.textAlignment=NSTextAlignmentCenter;
+    self.loading.backgroundColor=[UIColor colorWithWhite:0 alpha:.8];self.loading.numberOfLines=3;self.loading.layer.cornerRadius=12;self.loading.clipsToBounds=YES;[self.view addSubview:self.loading];
+    NSNotificationCenter *nc=NSNotificationCenter.defaultCenter;
+    [nc addObserver:self selector:@selector(stage:) name:StageNotification object:nil];
+    [nc addObserver:self selector:@selector(keyboardRequest:) name:KeyboardNotification object:nil];
+    [nc addObserver:self selector:@selector(keyboardFrame:) name:UIKeyboardWillChangeFrameNotification object:nil];
+    [nc addObserver:self selector:@selector(pause) name:UIApplicationWillResignActiveNotification object:nil];
+    [nc addObserver:self selector:@selector(resume) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [nc addObserver:self selector:@selector(audioInterrupted:) name:AVAudioSessionInterruptionNotification object:nil];
+    self.pump=[CADisplayLink displayLinkWithTarget:self selector:@selector(pollTouch)];[self.pump addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     UIApplication.sharedApplication.idleTimerDisabled=YES;
 }
--(UIButton *)addKey:(NSString *)name code:(uint32_t)code parent:(UIView *)parent {
-    UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem];b.tag=code;[b setTitle:name forState:UIControlStateNormal];b.tintColor=UIColor.whiteColor;b.titleLabel.font=[UIFont systemFontOfSize:15 weight:UIFontWeightBold];b.backgroundColor=[UIColor colorWithWhite:.16 alpha:.85];b.layer.cornerRadius=14;
-    [b addTarget:self action:@selector(keyDown:) forControlEvents:UIControlEventTouchDown|UIControlEventTouchDragEnter];
-    [b addTarget:self action:@selector(keyUp:) forControlEvents:UIControlEventTouchUpInside|UIControlEventTouchUpOutside|UIControlEventTouchCancel|UIControlEventTouchDragExit];[parent addSubview:b];return b;
-}
--(UIButton *)addAction:(NSString *)title action:(SEL)selector tag:(NSInteger)tag {
-    UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem];b.tag=tag;[b setTitle:title forState:UIControlStateNormal];b.tintColor=UIColor.whiteColor;b.backgroundColor=[UIColor colorWithWhite:.08 alpha:.85];b.layer.cornerRadius=9;b.titleLabel.font=[UIFont systemFontOfSize:12 weight:UIFontWeightMedium];[b addTarget:self action:selector forControlEvents:UIControlEventTouchUpInside];[self.view addSubview:b];return b;
-}
 -(void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];CGRect safe=UIEdgeInsetsInsetRect(self.view.bounds,self.view.safeAreaInsets);CGFloat x=safe.origin.x+10,y=CGRectGetMaxY(safe)-155;
-    self.pad.frame=CGRectMake(x,y,130,130);CGFloat right=CGRectGetMaxX(safe)-136;
-    NSArray *keys=@[@90,@88,@67,@86,@65,@83,@68,@56];for(NSUInteger i=0;i<keys.count;i++){UIView *b=[self.view viewWithTag:[keys[i]integerValue]];b.frame=CGRectMake(right+(i%2)*64,CGRectGetMaxY(safe)-235+(i/2)*56,58,50);}
-    [self.view viewWithTag:27].frame=CGRectMake(x,CGRectGetMinY(safe)+48,64,44);
-    [self.view viewWithTag:13].frame=CGRectMake(x+70,CGRectGetMinY(safe)+48,64,44);
-    [self.view viewWithTag:16].frame=CGRectMake(x,CGRectGetMaxY(safe)-209,130,44);
-    for(int i=0;i<4;i++)[self.view viewWithTag:1001+i].frame=CGRectMake(x+i*96,CGRectGetMinY(safe)+4,90,36);
-    self.extraKeys.frame=CGRectMake(CGRectGetMidX(safe)-185,CGRectGetMidY(safe)-110,370,225);
-    NSUInteger index=0;for(UIView *b in self.extraKeys.subviews){b.frame=CGRectMake(8+(index%6)*60,8+(index/6)*54,54,48);index++;}
+    [super viewDidLayoutSubviews];
+    // Keep the Android layout clear of the Dynamic Island and home indicator.
+    UIEdgeInsets safe=self.view.safeAreaInsets;
+    self.canvas.frame=UIEdgeInsetsInsetRect(self.view.bounds,UIEdgeInsetsMake(0,safe.left,MAX(8,safe.bottom),safe.right));
+    self.menu.frame=CGRectMake(CGRectGetMidX(self.view.bounds)-22,self.view.bounds.size.height-31,44,24);
+    self.loading.frame=CGRectMake(CGRectGetMidX(self.view.bounds)-210,CGRectGetMidY(self.view.bounds)-45,420,90);
 }
 -(void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];if(self.started)return;self.started=YES;
-    [self.view layoutIfNeeded];GameView *canvas=self.canvas;
-    uint32_t w=(uint32_t)(canvas.bounds.size.width*canvas.contentScaleFactor),h=(uint32_t)(canvas.bounds.size.height*canvas.contentScaleFactor);
-    NSString *root=self.gameRoot ?: Documents();NSString *font=[NSBundle.mainBundle pathForResource:@"soundfont" ofType:@"sf2"];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{@autoreleasepool{
+    GameView *canvas=self.canvas;NSString *root=self.gameRoot;
+    uint32_t w=canvas.bounds.size.width*canvas.contentScaleFactor,h=canvas.bounds.size.height*canvas.contentScaleFactor;
+    NSString *font=[NSBundle.mainBundle pathForResource:@"soundfont" ofType:@"sf2"];
+    // GCD workers have a small stack. GML parsing and execution need a dedicated engine stack.
+    NSThread *engine=[[NSThread alloc]initWithBlock:^{@autoreleasepool{
+        NSLog(@"[startup] motor en hilo dedicado; stack=%lu KiB",(unsigned long)(NSThread.currentThread.stackSize/1024));
         int result=gm_ios_run((__bridge void *)canvas,w,h,root.fileSystemRepresentation,font.fileSystemRepresentation,self.smoke);
-        NSString *message=result==0 ? @"Sesión finalizada" : EngineError();
-        if(self.smoke){NSString *value=result==0?@"PASS":message;[value writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];}
-        dispatch_async(dispatch_get_main_queue(),^{[self dismissViewControllerAnimated:YES completion:^{if(result!=0){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Registro de la prueba" message:message preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController:a animated:YES completion:nil];}}];});
-    }});
+        NSString *message=result==0?@"Sesión finalizada":EngineError();
+        if(self.smoke){[ (result==0?@"PASS":message) writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];}
+        dispatch_async(dispatch_get_main_queue(),^{
+            [self.pump invalidate];self.pump=nil;[self.canvas resignFirstResponder];
+            [self dismissViewControllerAnimated:YES completion:^{if(result!=0){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"No se pudo iniciar" message:message preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController:a animated:YES completion:nil];}}];
+        });
+    }}];engine.name=@"Reloaded Engine";engine.stackSize=8*1024*1024;[engine start];
 }
--(void)keyDown:(UIButton *)button{gm_ios_key((uint32_t)button.tag,true);}
--(void)keyUp:(UIButton *)button{gm_ios_key((uint32_t)button.tag,false);}
--(void)keyboard{if(self.canvas.isFirstResponder)[self.canvas resignFirstResponder];else[self.canvas becomeFirstResponder];}
--(void)moreKeys{gm_ios_release_all();self.extraKeys.hidden=!self.extraKeys.hidden;}
--(void)toggleMouse{gm_ios_release_all();self.canvas.rightClick=!self.canvas.rightClick;[self.mouseToggle setTitle:self.canvas.rightClick?@"Clic: der.":@"Clic: izq." forState:UIControlStateNormal];}
--(void)pause{[self.pad releaseDirections];gm_ios_release_all();gm_ios_set_active(false);}
+-(void)pollTouch{if(!self.smoke)gm_ios_pump();}
+-(void)stage:(NSNotification *)n{self.loading.text=n.object;self.loading.hidden=[n.object isEqualToString:@"Juego iniciado"]||[n.object isEqualToString:@"Prueba de controles"]||[n.object isEqualToString:@"Sesión finalizada"];}
+-(void)keyboardRequest:(NSNotification *)n{if([n.object boolValue])[self.canvas becomeFirstResponder];else[self.canvas resignFirstResponder];}
+-(void)keyboardFrame:(NSNotification *)n{
+    CGRect keyboard=[self.canvas convertRect:[n.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
+    CGRect overlap=CGRectIntersection(self.canvas.bounds,keyboard);
+    gm_ios_ime_inset(CGRectIsNull(overlap)?0:overlap.size.height*self.canvas.contentScaleFactor);
+}
+-(void)pause{gm_ios_release_all();gm_ios_set_active(false);}
 -(void)resume{gm_ios_set_active(true);}
 -(void)audioInterrupted:(NSNotification *)n{if([n.userInfo[AVAudioSessionInterruptionTypeKey]unsignedIntegerValue]==AVAudioSessionInterruptionTypeBegan)[self pause];else if(UIApplication.sharedApplication.applicationState==UIApplicationStateActive)[self resume];}
+-(void)options {
+    gm_ios_release_all();UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Reloaded" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    [a addAction:[UIAlertAction actionWithTitle:@"Teclado" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[self.canvas becomeFirstResponder];}]];
+    [a addAction:[UIAlertAction actionWithTitle:@"Teclas adicionales" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[self extraKeys];}]];
+    [a addAction:[UIAlertAction actionWithTitle:@"Salir al inicio" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){[self askExit];}]];
+    [a addAction:[UIAlertAction actionWithTitle:@"Continuar" style:UIAlertActionStyleCancel handler:nil]];
+    a.popoverPresentationController.sourceView=self.menu;a.popoverPresentationController.sourceRect=self.menu.bounds;[self presentViewController:a animated:YES completion:nil];
+}
+-(void)extraKeys {
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Teclas adicionales" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    NSArray *names=@[@"F1",@"F2",@"F3",@"F4",@"F5",@"F6",@"F7",@"F8",@"Shift",@"Tab"];
+    NSArray *codes=@[@112,@113,@114,@115,@116,@117,@118,@119,@16,@9];
+    for(NSUInteger i=0;i<names.count;i++){NSNumber *code=codes[i];[a addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){gm_ios_tap(code.unsignedIntValue);}]];}
+    [a addAction:[UIAlertAction actionWithTitle:@"Cerrar" style:UIAlertActionStyleCancel handler:nil]];a.popoverPresentationController.sourceView=self.menu;a.popoverPresentationController.sourceRect=self.menu.bounds;[self presentViewController:a animated:YES completion:nil];
+}
 -(void)askExit {
-    [self.canvas resignFirstResponder];gm_ios_release_all();
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"¿Salir del juego?" message:@"Guardá desde el menú del juego antes de salir. El progreso sin guardar se perderá." preferredStyle:UIAlertControllerStyleAlert];
+    [self.canvas resignFirstResponder];UIAlertController *a=[UIAlertController alertControllerWithTitle:@"¿Salir del juego?" message:@"Guardá desde el menú del juego antes de salir. El progreso sin guardar se perderá." preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"Continuar jugando" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"Salir" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){gm_ios_close();}]];[self presentViewController:a animated:YES completion:nil];
+    [a addAction:[UIAlertAction actionWithTitle:@"Salir" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){gm_ios_close();}]];[self presentViewController:a animated:YES completion:nil];
 }
 -(void)dealloc{[NSNotificationCenter.defaultCenter removeObserver:self];UIApplication.sharedApplication.idleTimerDisabled=NO;}
 @end
+
+#include "Settings.m"
 
 @interface Launcher : UIViewController<UIDocumentPickerDelegate>
 @property(nonatomic,strong)UIStackView *stack;
@@ -222,8 +236,9 @@ void gm_ios_audio_stop(void) {
     self.stack=[[UIStackView alloc]init];self.stack.axis=UILayoutConstraintAxisVertical;self.stack.spacing=10;self.stack.translatesAutoresizingMaskIntoConstraints=NO;[self.view addSubview:self.stack];
     [NSLayoutConstraint activateConstraints:@[[self.stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],[self.stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],[self.stack.widthAnchor constraintEqualToConstant:480]]];
     UILabel *title=[[UILabel alloc]init];title.text=@"RELOADED  /  iOS";title.font=[UIFont systemFontOfSize:30 weight:UIFontWeightBlack];title.textColor=UIColor.whiteColor;title.textAlignment=NSTextAlignmentCenter;[self.stack addArrangedSubview:title];
-    self.status=[[UILabel alloc]init];self.status.text=@"Versión experimental · Importá el ZIP original del juego";self.status.textColor=[UIColor colorWithWhite:.72 alpha:1];self.status.font=[UIFont systemFontOfSize:14];self.status.textAlignment=NSTextAlignmentCenter;self.status.numberOfLines=3;[self.stack addArrangedSubview:self.status];
+    self.status=[[UILabel alloc]init];self.status.text=@"Controles Android 0.3.9/V22 · Importá el ZIP original del juego";self.status.textColor=[UIColor colorWithWhite:.72 alpha:1];self.status.font=[UIFont systemFontOfSize:14];self.status.textAlignment=NSTextAlignmentCenter;self.status.numberOfLines=3;[self.stack addArrangedSubview:self.status];
     self.playButton=[self button:@"Jugar" action:@selector(play)];self.importButton=[self button:@"Importar ZIP del juego" action:@selector(importGame)];
+    [self button:@"Ajustes y controles" action:@selector(settings)];
     UIStackView *row=[[UIStackView alloc]init];row.axis=UILayoutConstraintAxisHorizontal;row.spacing=12;row.distribution=UIStackViewDistributionFillEqually;
     UIButton *logs=[UIButton buttonWithType:UIButtonTypeSystem];[logs setTitle:@"Compartir registro" forState:UIControlStateNormal];[logs addTarget:self action:@selector(logs) forControlEvents:UIControlEventTouchUpInside];[row addArrangedSubview:logs];
     UIButton *saves=[UIButton buttonWithType:UIButtonTypeSystem];[saves setTitle:@"Mis archivos y partidas" forState:UIControlStateNormal];[saves addTarget:self action:@selector(saves) forControlEvents:UIControlEventTouchUpInside];[row addArrangedSubview:saves];[self.stack addArrangedSubview:row];
@@ -232,6 +247,7 @@ void gm_ios_audio_stop(void) {
 -(void)viewWillAppear:(BOOL)animated{[super viewWillAppear:animated];NSString *root=[self gameRoot];self.playButton.enabled=root && gm_ios_has_game(root.fileSystemRepresentation);self.playButton.alpha=self.playButton.enabled?1:.4;}
 -(void)viewDidAppear:(BOOL)animated{[super viewDidAppear:animated];static BOOL tested=NO;if(!tested && [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"]){tested=YES;GameController *game=[GameController new];game.smoke=YES;game.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:game animated:NO completion:nil];}}
 -(void)play{GameController *game=[GameController new];game.gameRoot=[self gameRoot];game.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:game animated:YES completion:nil];}
+-(void)settings{UINavigationController *nav=[[UINavigationController alloc]initWithRootViewController:[[ReloadedSettings alloc]initWithStyle:UITableViewStyleInsetGrouped]];nav.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:nav animated:YES completion:nil];}
 -(void)importGame{if(self.importing)return;UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]initForOpeningContentTypes:@[UTTypeZIP] asCopy:NO];picker.delegate=self;[self presentViewController:picker animated:YES completion:nil];}
 -(void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *url=urls.firstObject;if(!url)return;BOOL access=[url startAccessingSecurityScopedResource];
@@ -244,11 +260,13 @@ void gm_ios_audio_stop(void) {
         if(access)[url stopAccessingSecurityScopedResource];
         if(coordinationError)message=coordinationError.localizedDescription;
         if(result==0)[NSUserDefaults.standardUserDefaults setObject:folder forKey:@"gameFolder"];
-        dispatch_async(dispatch_get_main_queue(),^{self.importing=NO;self.importButton.enabled=YES;self.playButton.enabled=[self gameRoot]!=nil;self.playButton.alpha=self.playButton.enabled?1:.4;self.status.text=result==0?@"Juego importado. Listo para la prueba.":message;});
+        dispatch_async(dispatch_get_main_queue(),^{self.importing=NO;self.importButton.enabled=YES;self.playButton.enabled=[self gameRoot]!=nil;self.playButton.alpha=self.playButton.enabled?1:.4;self.status.text=result==0?@"Juego importado. Tocá Jugar.":message;});
     }});
 }
 -(void)logs {
-    NSURL *url=[NSURL fileURLWithPath:[Documents()stringByAppendingPathComponent:@"emulator.log"]];UIActivityViewController *sheet=[[UIActivityViewController alloc]initWithActivityItems:@[url] applicationActivities:nil];sheet.popoverPresentationController.sourceView=self.view;sheet.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(self.view.bounds),CGRectGetMidY(self.view.bounds),1,1);[self presentViewController:sheet animated:YES completion:nil];
+    NSMutableArray *files=[NSMutableArray new];
+    for(NSString *name in @[@"emulator-previous.log",@"emulator.log",@"last-stage.txt"]){NSString *p=[Documents() stringByAppendingPathComponent:name];if([NSFileManager.defaultManager fileExistsAtPath:p])[files addObject:[NSURL fileURLWithPath:p]];}
+    UIActivityViewController *sheet=[[UIActivityViewController alloc]initWithActivityItems:files applicationActivities:nil];sheet.popoverPresentationController.sourceView=self.view;sheet.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(self.view.bounds),CGRectGetMidY(self.view.bounds),1,1);[self presentViewController:sheet animated:YES completion:nil];
 }
 -(void)saves {UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Archivos y partidas" message:@"Abrí Archivos → En mi iPhone → Reloaded iOS. Cada carpeta game contiene una importación y sus partidas. Podés copiar tus partidas desde allí. Importar otro ZIP conserva las carpetas anteriores." preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:a animated:YES completion:nil];}
 @end
@@ -257,12 +275,21 @@ void gm_ios_audio_stop(void) {
 @property(nonatomic,strong)UIWindow *window;
 @end
 @implementation AppDelegate
+-(void)applicationDidReceiveMemoryWarning:(UIApplication *)application {NSLog(@"[memory] iOS avisó de presión de memoria");}
 -(BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     audioLock=[NSLock new];
     NSString *log=[Documents() stringByAppendingPathComponent:@"emulator.log"];NSString *old=[Documents() stringByAppendingPathComponent:@"emulator-previous.log"];
     [NSFileManager.defaultManager removeItemAtPath:old error:nil];[NSFileManager.defaultManager moveItemAtPath:log toPath:old error:nil];
     freopen(log.fileSystemRepresentation,"a",stdout);freopen(log.fileSystemRepresentation,"a",stderr);setbuf(stdout,NULL);setbuf(stderr,NULL);
-    NSLog(@"Reloaded iOS experimental 0.1.0");
+    NSLog(@"Reloaded iOS 0.2.0 — controles Android 0.3.9/V22");
+    gm_ios_configure(Documents().fileSystemRepresentation);
+    NSString *source=[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Controls"];
+    for(NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:source error:nil]){
+        NSString *target=[Documents() stringByAppendingPathComponent:name];
+        if(![NSFileManager.defaultManager fileExistsAtPath:target]) [NSFileManager.defaultManager copyItemAtPath:[source stringByAppendingPathComponent:name] toPath:target error:nil];
+    }
+    NSDictionary *defaults=@{@"touch.conf":@"style=classic\nmove=joystick\nopacity=1\nscale=1\n",@"touch-appearance.conf":@"touch-appearance-v1\nstyle=modern_v2\ntint=original\nanimations=1\nhaptics=1\n",@"shaders.txt":@"off\n135\n55\n",@"video.conf":@"scaling=aspect\nrender=native\nshow_fps=0\n"};
+    for(NSString *name in defaults){NSString *path=[Documents() stringByAppendingPathComponent:name];if(![NSFileManager.defaultManager fileExistsAtPath:path])[(NSString *)defaults[name] writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];}
     self.window=[[UIWindow alloc]initWithFrame:UIScreen.mainScreen.bounds];self.window.rootViewController=[Launcher new];[self.window makeKeyAndVisible];return YES;
 }
 @end

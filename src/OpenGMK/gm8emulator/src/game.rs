@@ -847,6 +847,8 @@ impl Game {
             temp_directory.pop();
         }
 
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Cargando sonidos");
         let sounds = sounds
             .into_iter()
             .enumerate()
@@ -903,6 +905,8 @@ impl Game {
             })
             .collect::<Vec<_>>();
 
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Organizando sprites");
         let sprites = sprites
             .into_iter()
             .map(|o| {
@@ -958,6 +962,8 @@ impl Game {
             .collect::<Result<Vec<_>, ()>>()
             .expect("failed to pack sprites");
 
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Organizando fondos");
         let backgrounds = backgrounds
             .into_iter()
             .map(|o| {
@@ -979,6 +985,8 @@ impl Game {
             .collect::<Result<Vec<_>, ()>>()
             .expect("failed to pack backgrounds");
 
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Organizando fuentes");
         let fonts = fonts
             .into_iter()
             .map(|o| {
@@ -1079,6 +1087,8 @@ impl Game {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Compilando scripts");
         let scripts = scripts
             .into_iter()
             .map(|t| {
@@ -1121,6 +1131,8 @@ impl Game {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Compilando objetos");
         let objects = {
             let mut object_parents: Vec<Option<i32>> = Vec::with_capacity(objects.len());
             let mut objects = objects
@@ -1194,6 +1206,8 @@ impl Game {
             objects
         };
 
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Preparando habitaciones");
         let rooms = rooms
             .into_iter()
             .map(|t| {
@@ -1958,10 +1972,12 @@ impl Game {
     /// inside its own wait loop (it calls `screen_redraw` while it waits for a key), so the frame
     /// loop does not come back round until the dialogue is over, and sampling there would never see
     /// one.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     pub(crate) fn sync_overlay(&self) {
         // The touch overlay tells taps from drags in the bag by knowing which room/modal it is in.
         let room_name = self.assets.rooms.get_asset(self.room.id).map(|r| r.name.to_string().to_ascii_lowercase()).unwrap_or_default();
+        #[cfg(target_os = "android")]
+        {
         // Title, character selection and the intro happen before there is a player to show. They
         // must not report a character (the selection changes it on every key, which would upload a
         // head each time); the chat right after selection is where the chosen player appears.
@@ -2068,6 +2084,7 @@ impl Game {
             &trainer,
             self.global_number(b"pkmn2", 0).unwrap_or(-1),
         );
+        }
         crate::touch_navigation::report(self.room.id, self.modal_system(), room_name.contains("mochila") || room_name.contains("bagroom"));
         crate::touch_controls::set_room(self.room.id);
         crate::touch_controls::set_dialogue(self.dialogue_open());
@@ -2082,7 +2099,7 @@ impl Game {
     }
 
     /// Each party slot's stored species value (0 = empty) straight from `global.pkmn1[0..5]`.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn party_species(&self) -> [i32; crate::touch_controls::PICKER_SLOTS] {
         let mut species = [0; crate::touch_controls::PICKER_SLOTS];
         for (index, slot) in species.iter_mut().enumerate() {
@@ -2096,7 +2113,7 @@ impl Game {
     ///
     /// The renderer keeps the boxes in the game's own coordinates: the view moves a room coordinate
     /// into the picture, and the picture sits somewhere in the window, so both steps are applied here.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn picker_boxes(&self) -> Vec<(f32, f32, f32, f32)> {
         let sprites = crate::touch_controls::character_sprites();
         let (window_w, window_h) = self.window_inner_size;
@@ -2196,7 +2213,7 @@ impl Game {
     }
 
     /// Some number in a GML global, if the game has declared it.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn global_number(&self, name: &[u8], index: u32) -> Option<i32> {
         let field_id = self.compiler.find_field_id(name)?;
         match self.globals.fields.get(&field_id)?.get(index)? {
@@ -2207,7 +2224,7 @@ impl Game {
 
     /// The id of the modal the game is drawing, or a negative code when it cannot be read:
     /// -1 nothing open, -2 the variable is unknown to the compiler, -3 not present in the globals.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn modal_system(&self) -> i32 {
         let Some(field_id) = self.compiler.find_field_id(b"drawModalSystem") else {
             return -2
@@ -2230,7 +2247,7 @@ impl Game {
     /// The game draws its dialogues (and the rest of its modals) through a script whose id it keeps
     /// in `global.drawModalSystem`; -1 means nothing is open. 6937 is the box with a portrait, 6949
     /// the plain one and 6941 the mobile one.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn dialogue_open(&self) -> bool {
         matches!(self.modal_system(), 6937 | 6949 | 6941)
     }
@@ -2238,14 +2255,14 @@ impl Game {
     /// True while the game's own Pokémon box (the PC storage) is open. There is no single room id to
     /// look at - the box can be reached from several places - but the game keeps `global.ENCAJA` set
     /// while it is showing, and that is what tells it apart.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn inside_box(&self) -> bool {
         self.global_number(b"ENCAJA", 0).is_some_and(|value| value != 0)
     }
 
     /// Read real cursor/slot state from MenuCajaControl (object 43, room 8).
     /// Negative pkmnC values represent eggs; missing cursor data fails closed.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn box_interaction(&self) -> (bool, bool) {
         if !self.inside_box() || self.room.id != 8 { return (false, false) }
         let mut objects = self.room.instance_list.iter_by_object(43);
@@ -2266,7 +2283,7 @@ impl Game {
 
     /// True while the game is showing its text-entry dialog, the one that draws the on-screen
     /// keyboard (GML script 7754). The Android side raises the system keyboard while it is open.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn text_entry_open(&self) -> bool {
         self.modal_system() == 7754
     }
@@ -2277,7 +2294,7 @@ impl Game {
     /// screen is the one drawn before the keyboard appeared or after it left. That left the pan one
     /// step behind - and the game stuck up top once the keyboard was gone. Presenting the frame that
     /// is already drawn is enough to move it, and it costs only the blit.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn represent_if_ime_moved(&mut self) {
         // The interpolation pass is already drawing; presenting from inside it would flush the
         // queue halfway through. Its own present, a few instructions later, sees the new inset.
@@ -2330,7 +2347,7 @@ impl Game {
         }
 
         // The touch overlay shows different controls depending on where we are in the game.
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         self.sync_overlay();
 
         if self.esc_close_game && self.input.keyboard_lastkey() == input::Button::Escape as u8 {
@@ -2543,7 +2560,7 @@ impl Game {
         crate::android_main::ime_pump();
         // The keyboard coming or going moves the picture, and the game does not redraw on its own
         // while it waits inside a text dialog, so the frame already drawn is presented again.
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         self.represent_if_ime_moved();
         self.window.poll_events();
         // Apply releases a previous poll deferred, then snapshot the held state so a press and
@@ -2732,6 +2749,8 @@ impl Game {
     // Plays the game normally
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.init()?;
+        #[cfg(target_os = "ios")]
+        crate::ios_main::stage("Juego iniciado");
         handle_scene_change!(self);
 
         // The launcher pins this through `video.conf`; a desktop user can set `OPENGMK_RENDER`.

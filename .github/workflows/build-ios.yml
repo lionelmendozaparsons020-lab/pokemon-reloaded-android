@@ -28,6 +28,10 @@ jobs:
           key: ios-v1-${{ runner.arch }}-${{ hashFiles('src/OpenGMK/Cargo.lock', 'src/OpenGMK/gm8emulator/Cargo.toml') }}
       - name: ZIP import and save preservation tests
         run: cargo test --manifest-path ios/archive-tests/Cargo.toml
+      - name: Original Android control and gesture regression tests
+        run: |
+          rustc --edition=2021 --test verification/touch_tests.rs -o /tmp/touch-tests
+          /tmp/touch-tests --test-threads=1
       - name: Build simulator app
         run: bash ios/build.sh simulator
       - name: Verify renderer and input in iOS simulator

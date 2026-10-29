@@ -369,51 +369,63 @@ static WHEEL_PTR: Mutex<Option<i32>> = Mutex::new(None);
 
 /// Android key events may arrive between game frames; a tap must survive the next sample.
 /// Repeated bag arrows require DOWN and UP in separate frames, not one held key forever.
-/// Keep reliable, frame-visible taps for SEL and other buttons; finger-scrolling
-/// uses shorter, separately paced arrow taps so the selection tracks the finger.
-#[derive(Clone, Copy)]
-struct QueuedTap { key: Key, navigation: bool }
 enum TapPhase {
     Idle,
     Pressed { key: Key, started: Instant, frame: u64, navigation: bool },
     Released { since: Instant, frame: u64, navigation: bool },
 }
-struct TapSequence { phase: TapPhase, queued: std::collections::VecDeque<QueuedTap> }
+struct TapSequence {
+    phase: TapPhase,
+    queued: std::collections::VecDeque<(Key, bool)>,
+}
 static TAPS: Mutex<TapSequence> = Mutex::new(TapSequence {
     phase: TapPhase::Idle, queued: std::collections::VecDeque::new(),
 });
 const TAP_HOLD: Duration = Duration::from_millis(55);
 const TAP_GAP: Duration = Duration::from_millis(25);
-const SCROLL_HOLD: Duration = Duration::from_millis(22);
-const SCROLL_GAP: Duration = Duration::from_millis(8);
-const SCROLL_FRAME_FALLBACK: Duration = Duration::from_millis(70);
+const TAP_FRAME_FALLBACK: Duration = Duration::from_millis(170);
 
-fn tap_key(key: Key) {
+fn queue_tap(key: Key, navigation: bool) {
     if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
     let mut taps = TAPS.lock().unwrap();
-    if taps.queued.len() < 32 { taps.queued.push_back(QueuedTap { key, navigation: false }); }
+    if navigation {
+        // Follow the newest direction; old swipes must not continue scrolling.
+        if taps.queued.iter().any(|(queued,nav)| *nav && *queued!=key) {
+            taps.queued.retain(|(_,nav)| !*nav);
+        }
+        // Navigation has a tiny bounded queue, unlike normal SEL/confirm taps.
+        if taps.queued.iter().filter(|(_,nav)| *nav).count() >= 3 {
+            if let Some(at)=taps.queued.iter().position(|(_,nav)| *nav) {
+                taps.queued.remove(at);
+            }
+        }
+    }
+    if taps.queued.len() < 32 { taps.queued.push_back((key,navigation)); }
 }
-/// At most one pending finger-scroll key; don't accumulate a second delayed queue
-/// behind touch_navigation's own bounded displacement queue.
-fn scroll_tap_capacity() -> bool { TAPS.lock().unwrap().queued.is_empty() }
-fn tap_scroll_key(key: Key) {
-    if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { return }
-    let mut taps = TAPS.lock().unwrap();
-    if taps.queued.is_empty() { taps.queued.push_back(QueuedTap { key, navigation: true }); }
+fn tap_key(key: Key) { queue_tap(key,false); }
+fn tap_navigation_key(key: Key) { queue_tap(key,true); }
+
+/// On release, allow only one last pending step and discard old queued movement.
+fn trim_navigation_taps() {
+    let mut taps=TAPS.lock().unwrap();
+    let mut left=0;
+    taps.queued.retain(|(_,nav)| {
+        if !*nav { true } else {
+            left+=1;
+            left<=1
+        }
+    });
 }
 fn flush_tapped_keys() {
     let mut taps = TAPS.lock().unwrap();
     let frame = crate::touch_navigation::frame();
-    let nav_active = crate::touch_navigation::active();
-    if !nav_active { taps.queued.retain(|tap| !tap.navigation); }
     let phase = std::mem::replace(&mut taps.phase, TapPhase::Idle);
     taps.phase = match phase {
         TapPhase::Pressed { key, started, frame: first_frame, navigation } => {
             let elapsed = started.elapsed();
-            let hold = if navigation { SCROLL_HOLD } else { TAP_HOLD };
-            let fallback = if navigation { SCROLL_FRAME_FALLBACK } else { Duration::from_millis(170) };
-            if !nav_active && navigation ||
-                (elapsed >= hold && (frame != first_frame || elapsed >= fallback)) {
+            let hold = if navigation { crate::touch_navigation::NAV_TAP_HOLD } else { TAP_HOLD };
+            let fallback = if navigation { crate::touch_navigation::NAV_HOLD_FALLBACK } else { TAP_FRAME_FALLBACK };
+            if elapsed >= hold && (frame != first_frame || elapsed >= fallback) {
                 if !crate::touch_controls::key_held_by_buttons(key) && !joystick_holds(key) {
                     android::push_input(ramen::platform::android::InputEvent::KeyUp { key });
                 }
@@ -421,20 +433,19 @@ fn flush_tapped_keys() {
             } else { TapPhase::Pressed { key, started, frame: first_frame, navigation } }
         }
         TapPhase::Released { since, frame: release_frame, navigation } => {
-            let gap = if navigation { SCROLL_GAP } else { TAP_GAP };
-            let fallback = if navigation { SCROLL_FRAME_FALLBACK } else { Duration::from_millis(170) };
-            if (!nav_active && navigation) ||
-                (since.elapsed() >= gap && (frame != release_frame || since.elapsed() >= fallback)) {
+            let gap=if navigation { crate::touch_navigation::NAV_TAP_GAP } else { TAP_GAP };
+            let fallback=if navigation { crate::touch_navigation::NAV_GAP_FALLBACK } else { TAP_FRAME_FALLBACK };
+            if since.elapsed() >= gap && (frame != release_frame || since.elapsed() >= fallback) {
                 TapPhase::Idle
             } else { TapPhase::Released { since, frame: release_frame, navigation } }
         }
         TapPhase::Idle => TapPhase::Idle,
     };
     if matches!(taps.phase, TapPhase::Idle) {
-        while let Some(tap) = taps.queued.pop_front() {
-            if crate::touch_controls::key_held_by_buttons(tap.key) || joystick_holds(tap.key) { continue }
-            android::push_input(ramen::platform::android::InputEvent::KeyDown { key: tap.key, text: None });
-            taps.phase = TapPhase::Pressed { key: tap.key, started: Instant::now(), frame, navigation: tap.navigation };
+        while let Some((key,navigation)) = taps.queued.pop_front() {
+            if crate::touch_controls::key_held_by_buttons(key) || joystick_holds(key) { continue }
+            android::push_input(ramen::platform::android::InputEvent::KeyDown { key, text: None });
+            taps.phase = TapPhase::Pressed { key, started: Instant::now(), frame, navigation };
             break
         }
     }
@@ -602,7 +613,11 @@ fn pointer_down(id: i32, x: f32, y: f32) {
 fn pointer_up(id: i32, x: f32, y: f32) {
     if BOX_TOUCH.lock().unwrap().end(id, crate::box_touch::Point(x, y), Instant::now()) { return }
     if crate::touch_navigation::owns(id){
-        if let Some((x,y))=crate::touch_navigation::end(id,x,y){android::push_input(ramen::platform::android::InputEvent::PointerMoved{x,y});}return
+        if let Some((x,y))=crate::touch_navigation::end(id,x,y){
+            android::push_input(ramen::platform::android::InputEvent::PointerMoved{x,y});
+        }
+        trim_navigation_taps();
+        return
     }
     let closes_wheel = {
         let mut owner = WHEEL_PTR.lock().unwrap();
@@ -1543,6 +1558,12 @@ pub fn android_entry(app: AndroidApp) {
     // The pad layout, the touch overlay and the video mode are read once, before any input can arrive.
     load_controls();
     load_touch();
+    // Official F3 cheats are part of Pokémon Reloaded; this flag merely exposes
+    // their existing key on the touch overlay, without patching game data.
+    let official_f3 = fs::read_to_string(storage_path("mods.conf"))
+        .map(|text| text.lines().any(|line| line.trim() == "official_f3=1"))
+        .unwrap_or(false);
+    crate::touch_controls::set_official_f3_enabled(official_f3);
     load_video();
     crate::touch_controls::load_layout(&fs::read_to_string(storage_path("touch-layout.conf")).unwrap_or_default());
     crate::touch_appearance::load(&fs::read_to_string(storage_path("touch-appearance.conf")).unwrap_or_default());
@@ -1617,9 +1638,7 @@ pub fn android_entry(app: AndroidApp) {
         }
         let box_events = BOX_TOUCH.lock().unwrap().poll(Instant::now(), crate::touch_controls::box_carrying(), crate::touch_controls::box_resting_target());
         emit_box_events(box_events);
-        if scroll_tap_capacity() {
-            if let Some(key)=crate::touch_navigation::next_key(){tap_scroll_key(key);}
-        }
+        if let Some(key)=crate::touch_navigation::next_key(){tap_navigation_key(key);}
         flush_tapped_keys();
         if let Some((down,x,y))=crate::touch_navigation::next_pointer(){
             use ramen::platform::android::InputEvent;
@@ -1957,3 +1976,6 @@ fn ensure_game_extracted() -> Result<PathBuf, String> {
     logf(&format!("listo: {}", exe.display()));
     Ok(exe)
 }
+
+/// Game assets used by the shared mobile overlay.
+pub(crate) fn game_dir() -> PathBuf { storage_dir().join("game") }

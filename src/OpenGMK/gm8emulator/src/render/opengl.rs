@@ -7,6 +7,10 @@ use crate::{
     types::Colour,
 };
 use ramen::{connection::Connection, window::Window};
+#[cfg(target_os = "android")]
+use crate::android_main as mobile;
+#[cfg(target_os = "ios")]
+use crate::ios_main as mobile;
 use rect_packer::DensePacker;
 use std::{any::Any, f64::consts::PI, ffi::{CStr, CString}, mem::{offset_of, size_of}, ptr};
 
@@ -248,14 +252,41 @@ pub struct RendererImpl {
     /// How much of `draw_offset` the shader applies (0 = current game step, 1 = previous one).
     interp_amount: f32,
 
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    reloaded_postfx: Option<ReloadedPostFx>,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    reloaded_postfx_attempted: bool,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    reloaded_postfx_quality: i32,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    reloaded_sun_angle: f32,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    reloaded_shadow_strength: f32,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    reloaded_postfx_started: std::time::Instant,
+
     /// Lazily-built program/buffers for the on-screen touch controls (Android only).
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     overlay: Option<Overlay>,
+}
+
+// RELOADED_POSTFX_PATCH_V1: scene-only GLES shader drawn before touch buttons.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[derive(Clone, Copy)]
+struct ReloadedPostFx {
+    program: GLuint,
+    vao: GLuint,
+    loc_scene: GLint,
+    loc_texel: GLint,
+    loc_time: GLint,
+    loc_quality: GLint,
+    loc_sun_dir: GLint,
+    loc_shadow_strength: GLint,
 }
 
 /// One image in the packed control artwork: which control it belongs to, and where it sits in the
 /// texture (u1, v1, u2, v2).
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 #[derive(Clone, Copy)]
 struct SkinSlot {
     name: &'static str,
@@ -269,16 +300,16 @@ struct SkinSlot {
 }
 
 /// How many control images the overlay can carry. Everything a control needs is one slot.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 const MAX_SKIN_SLOTS: usize = 96;
 
 /// Side of each party sprite's square cell in the strip the overlay keeps for them.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 const PARTY_CELL: u32 = 64;
 
 /// A tiny self-contained GL program to draw the touch controls over the frame, without touching
 /// the emulator's own render state.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 #[derive(Clone, Copy)]
 struct Overlay {
     program: GLuint,
@@ -295,7 +326,7 @@ struct Overlay {
     party_version: u64,
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 impl Overlay {
     fn slot(&self,name:&str)->Option<&SkinSlot>{
         let context=crate::touch_controls::current_context();
@@ -799,7 +830,20 @@ impl RendererImpl {
                 draw_offset: [0.0, 0.0],
                 interp_amount: 0.0,
 
-                #[cfg(target_os = "android")]
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                reloaded_postfx: None,
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                reloaded_postfx_attempted: false,
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                reloaded_postfx_quality: 0,
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                reloaded_sun_angle: 135.0,
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                reloaded_shadow_strength: 0.55,
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                reloaded_postfx_started: std::time::Instant::now(),
+
+                #[cfg(any(target_os = "android", target_os = "ios"))]
                 overlay: None,
 
                 gl,
@@ -980,14 +1024,18 @@ impl RendererImpl {
 /// Packs the pixel-art artwork the launcher leaves next to the game into one texture: the joystick's
 /// two images, plus one for every control that has a `<name>.png` beside it. Returns the texture (0
 /// when there is nothing) and where each image sits.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
     let mut slots: [Option<SkinSlot>; MAX_SKIN_SLOTS] = [None; MAX_SKIN_SLOTS];
     // Same folder the launcher writes `controls.conf` and `layout.conf` to.
-    let dir = crate::android_main::storage_dir().to_string_lossy().into_owned();
+    let dir = mobile::storage_dir().to_string_lossy().into_owned();
+    let modern_v2 = crate::touch_appearance::settings().style == crate::touch_appearance::Style::ModernV2;
     let mut images: Vec<(&'static str, image::RgbaImage, bool, u8, bool)> = Vec::new();
     let load = |name: &str, fallback: &str| {
-        image::open(format!("{}/touch-sprites-active/{}.png", dir, name)).ok().map(|img| (img,true))
+        (if modern_v2 {
+            image::open(format!("{}/moderno-v2/{}", dir, fallback)).ok().map(|img| (img,false))
+        } else { None })
+            .or_else(|| image::open(format!("{}/touch-sprites-active/{}.png", dir, name)).ok().map(|img| (img,true)))
             .or_else(|| image::open(format!("{}/{}", dir, fallback)).ok().map(|img| (img,false)))
     };
     for (name, file) in [
@@ -1009,7 +1057,10 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
         }}
         if let Some((img, custom)) = load(control.name, &format!("{}.png",control.name)) {
             let mut image = img.to_rgba8();
-            if let Some(tint) = crate::touch_appearance::settings().tint {
+            let tint = crate::touch_appearance::settings().tint.or_else(|| {
+                None
+            });
+            if let Some(tint) = tint {
                 for pixel in image.pixels_mut() { crate::touch_appearance::tint_pixel(&mut pixel.0, tint); }
             }
             images.push((control.name, image, custom,0,true));
@@ -1021,13 +1072,18 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
             let scoped=format!("{}/touch-sprites-active/{}__{}.png",dir,prefix,name);
             let bundled=format!("{}/{}__{}.png",dir,prefix,name);
             let legacy=format!("{}/touch-sprites-active/{}.png",dir,name);
-            let (file,custom)=if !original && std::path::Path::new(&scoped).is_file(){(scoped,true)}
+            let styled=format!("{}/moderno-v2/{}__{}.png",dir,prefix,name);
+            let (file,custom)=if modern_v2 && std::path::Path::new(&styled).is_file(){(styled,false)}
+                else if !original && std::path::Path::new(&scoped).is_file(){(scoped,true)}
                 else if !original && std::path::Path::new(&legacy).is_file(){continue}
                 else if std::path::Path::new(&bundled).is_file(){(bundled,false)}
                 else if original{(format!("{}/{}.png",dir,name),false)}else{continue};
             if let Ok(img)=image::open(file){
                 let mut img=img.to_rgba8();
-                if let Some(tint)=crate::touch_appearance::settings().tint{for pixel in img.pixels_mut(){crate::touch_appearance::tint_pixel(&mut pixel.0,tint);}}
+                let tint=crate::touch_appearance::settings().tint.or_else(|| {
+                    None
+                });
+                if let Some(tint)=tint{for pixel in img.pixels_mut(){crate::touch_appearance::tint_pixel(&mut pixel.0,tint);}}
                 images.push((name,img,custom,context,true));
             }else if original{images.push((name,image::RgbaImage::new(1,1),false,context,false));}
         }
@@ -1087,7 +1143,7 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
 static LABEL_TEX: std::sync::Mutex<GLuint> = std::sync::Mutex::new(0);
 static LABELS: std::sync::Mutex<Vec<(String, [f32; 4], f32)>> = std::sync::Mutex::new(Vec::new());
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn label_file(text: &str) -> String {
     let mut name = String::from("label_");
     for c in text.chars() {
@@ -1098,9 +1154,9 @@ fn label_file(text: &str) -> String {
 }
 
 /// Packs the label images the launcher left in `files/touch-labels`, one slot per label text.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn load_label_skin(gl: &gl::Gl) -> GLuint {
-    let dir = crate::android_main::storage_dir().join("touch-labels");
+    let dir = mobile::storage_dir().join("touch-labels");
     let mut texts: Vec<&'static str> = Vec::new();
     for control in crate::touch_controls::CLASSIC_CONTROLS {
         if let crate::touch_controls::Label::Text(text) = control.label {
@@ -1168,18 +1224,18 @@ fn load_label_skin(gl: &gl::Gl) -> GLuint {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn label_art(text: &str) -> Option<([f32; 4], f32)> {
     LABELS.lock().unwrap().iter().find(|(known, _, _)| known == text).map(|(_, uv, aspect)| (*uv, *aspect))
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn label_texture() -> GLuint {
     *LABEL_TEX.lock().unwrap()
 }
 
 /// Pushes a label as a texture quad, capped so a wide label still fits inside its button.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_label_sprite(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, half_h: f32, uv: [f32; 4], aspect: f32) {
     let max_w = half_h * 3.0;
     let mut hh = half_h;
@@ -1192,7 +1248,7 @@ fn push_label_sprite(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, hal
 }
 
 /// Creates the strip the party's six sprites go in: one square cell each, transparent to start with.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 unsafe fn create_party_texture(gl: &gl::Gl) -> GLuint {
     let mut texture = 0;
     gl.GenTextures(1, &mut texture);
@@ -1219,9 +1275,9 @@ unsafe fn create_party_texture(gl: &gl::Gl) -> GLuint {
 
 /// Reads the party's sprites out of the game's own files and refills the strip, one cell each. Shiny
 /// Pokémon keep the offset the game stores, which is also what picks their folder.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 unsafe fn upload_party(gl: &gl::Gl, texture: GLuint, species: [i32; crate::touch_controls::PICKER_SLOTS]) {
-    let dir = crate::android_main::storage_dir().join("game/data");
+    let dir = mobile::game_dir().join("data");
     let cell = PARTY_CELL as usize;
     let cells = crate::touch_controls::PICKER_SLOTS;
     let stride = cell * cells;
@@ -1268,13 +1324,13 @@ unsafe fn upload_party(gl: &gl::Gl, texture: GLuint, species: [i32; crate::touch
 
 /// Pushes one vertex, converting window pixels to clip space. The texture coordinate is left at the
 /// top-left of the overlay's 1x1 white texture, so a plain colour comes through untouched.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_vertex(out: &mut Vec<f32>, ww: f32, wh: f32, x: f32, y: f32, col: [f32; 4]) {
     out.extend_from_slice(&[x / ww * 2.0 - 1.0, 1.0 - y / wh * 2.0, col[0], col[1], col[2], col[3], 0.0, 0.0]);
 }
 
 /// Transforms only the drawing; touch areas and key dispatch remain independent.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn transform_touch_vertices(vertices: &mut [f32], center: (f32, f32), scale: f32, brightness: f32) {
     let (cx, cy) = (center.0*2.0-1.0, 1.0-center.1*2.0);
     for vertex in vertices.chunks_exact_mut(8) {
@@ -1286,7 +1342,7 @@ fn transform_touch_vertices(vertices: &mut [f32], center: (f32, f32), scale: f32
 
 /// Pushes a textured quad, used for the pixel-art control artwork. The colour is white, so the
 /// sprite comes through as drawn.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_sprite(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1311,20 +1367,20 @@ fn push_sprite(
     corner(x1, y2, u1, v2);
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_tri(out: &mut Vec<f32>, ww: f32, wh: f32, a: (f32, f32), b: (f32, f32), c: (f32, f32), col: [f32; 4]) {
     push_vertex(out, ww, wh, a.0, a.1, col);
     push_vertex(out, ww, wh, b.0, b.1, col);
     push_vertex(out, ww, wh, c.0, c.1, col);
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_quad(out: &mut Vec<f32>, ww: f32, wh: f32, x1: f32, y1: f32, x2: f32, y2: f32, col: [f32; 4]) {
     push_tri(out, ww, wh, (x1, y1), (x2, y1), (x2, y2), col);
     push_tri(out, ww, wh, (x1, y1), (x2, y2), (x1, y2), col);
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, col: [f32; 4]) {
     const SEG: usize = 24;
     for i in 0..SEG {
@@ -1334,7 +1390,7 @@ fn push_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, c
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_ring(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, thickness: f32, col: [f32; 4]) {
     const SEG: usize = 24;
     let r0 = (r - thickness).max(0.0);
@@ -1348,7 +1404,7 @@ fn push_ring(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, thi
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_arrow(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, size: f32, dir: crate::touch_controls::Dir, col: [f32; 4]) {
     use crate::touch_controls::Dir;
     let (dx, dy) = match dir {
@@ -1365,7 +1421,7 @@ fn push_arrow(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, size: f32,
 }
 
 /// A tiny 3x5 bitmap font, just for the control labels.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn glyph(c: char) -> Option<[u8; 5]> {
     Some(match c {
         'Z' => [0b111, 0b001, 0b010, 0b100, 0b111],
@@ -1400,7 +1456,7 @@ fn glyph(c: char) -> Option<[u8; 5]> {
     })
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_text(out: &mut Vec<f32>, ww: f32, wh: f32, text: &str, cx: f32, cy: f32, px: f32, col: [f32; 4]) {
     let chars: Vec<char> = text.chars().collect();
     let char_w = 4.0 * px; // 3 columns of glyph + 1 gap
@@ -1425,7 +1481,7 @@ fn push_text(out: &mut Vec<f32>, ww: f32, wh: f32, text: &str, cx: f32, cy: f32,
 // --- New overlay style: smooth, semi-transparent shapes. All geometry, so it stays crisp at any size
 // and needs no artwork.
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn lerp_col(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     let t = t.clamp(0.0, 1.0);
     [
@@ -1436,14 +1492,14 @@ fn lerp_col(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     ]
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn with_alpha(mut col: [f32; 4], alpha: f32) -> [f32; 4] {
     col[3] *= alpha;
     col
 }
 
 /// The outline of a rounded rectangle, walked clockwise so it can be drawn as a fan from the centre.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn round_rect_outline(cx: f32, cy: f32, hw: f32, hh: f32, r: f32) -> Vec<(f32, f32)> {
     const SEG: usize = 5;
     let r = r.min(hw).min(hh).max(0.0);
@@ -1464,7 +1520,7 @@ fn round_rect_outline(cx: f32, cy: f32, hw: f32, hh: f32, r: f32) -> Vec<(f32, f
 }
 
 /// A filled rounded rectangle with a vertical gradient (top colour down to bottom colour).
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_round_rect(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1496,7 +1552,7 @@ fn push_round_rect(
 }
 
 /// A filled circle with a vertical gradient, for the joystick and the D-pad's centre.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_gradient_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, top: [f32; 4], bottom: [f32; 4]) {
     if r <= 0.0 {
         return
@@ -1518,7 +1574,7 @@ fn push_gradient_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
 }
 
 /// A round, soft button: shadow, light rim, gradient fill and its label.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_soft_button(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1561,7 +1617,7 @@ fn push_soft_button(
 }
 
 /// The joystick of the new overlay: a soft translucent ring with a knob that follows the thumb.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_soft_joystick(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, ox: f32, oy: f32, opacity: f32) {
     let shadow = with_alpha([0.0, 0.0, 0.0, 0.28], opacity);
     let rim = with_alpha([1.0, 1.0, 1.0, 0.28], opacity);
@@ -1586,7 +1642,7 @@ fn push_soft_joystick(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r:
 }
 
 /// The D-pad of the new overlay: a soft translucent cross with four arrows.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_soft_dpad(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, opacity: f32) {
     use crate::touch_controls::Dir;
     let shadow = with_alpha([0.0, 0.0, 0.0, 0.26], opacity);
@@ -1612,7 +1668,7 @@ fn push_soft_dpad(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32
 
 /// A modern control: a dark translucent disc with a soft rim, an inner ring and its label. Wide
 /// labels become a rounded pill instead of being squeezed into a circle.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_modern_control(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1656,7 +1712,7 @@ fn push_modern_control(
     (cx, cy, r)
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn poly_dir(from: (f32, f32), to: (f32, f32)) -> (f32, f32) {
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     let len = (dx * dx + dy * dy).sqrt().max(0.0001);
@@ -1664,7 +1720,7 @@ fn poly_dir(from: (f32, f32), to: (f32, f32)) -> (f32, f32) {
 }
 
 /// The outline of a rounded cross, walked in order, so the D-pad reads as one clean shape.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn plus_points(cx: f32, cy: f32, arm: f32, thick: f32, radius: f32) -> Vec<(f32, f32)> {
     let corners = [
         (cx - thick, cy - arm), (cx + thick, cy - arm), (cx + thick, cy - thick), (cx + arm, cy - thick),
@@ -1691,7 +1747,7 @@ fn plus_points(cx: f32, cy: f32, arm: f32, thick: f32, radius: f32) -> Vec<(f32,
 }
 
 /// Fills a polygon as a fan from (cx, cy), with a vertical gradient.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_polygon(out: &mut Vec<f32>, ww: f32, wh: f32, points: &[(f32, f32)], cx: f32, cy: f32, top: [f32; 4], bottom: [f32; 4]) {
     if points.len() < 3 {
         return
@@ -1712,7 +1768,7 @@ fn push_polygon(out: &mut Vec<f32>, ww: f32, wh: f32, points: &[(f32, f32)], cx:
 }
 
 /// Fixed socket, connecting shaft, contact shadow and eight direction detents.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_stick_mount(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32,
     r: f32, ox: f32, oy: f32, tint: Option<[f32; 3]>) {
     let t = tint.unwrap_or([1.0; 3]);
@@ -1744,7 +1800,7 @@ fn push_stick_mount(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32,
 
 /// The modern movement control: a clean translucent disc with a single rounded cross that lights up
 /// the arm being pressed, or a knob that follows the thumb (joystick).
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, ox: f32, oy: f32, dpad: bool, tint: Option<[f32; 3]>) {
     use crate::touch_controls::Dir;
     let t = tint.unwrap_or([1.0, 1.0, 1.0]);
@@ -1811,7 +1867,153 @@ fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
+impl RendererImpl {
+    fn reloaded_postfx_settings() -> (i32, f32, f32) {
+        let text = std::fs::read_to_string(mobile::storage_path("shaders.txt"))
+            .unwrap_or_else(|_| String::from("high\n135\n55\n"));
+        let mut lines = text.lines();
+        let quality = match lines.next().unwrap_or("high").trim().to_ascii_lowercase().as_str() {
+            "off" | "0" | "false" => 0,
+            "lite" | "low" | "1" => 1,
+            _ => 2,
+        };
+        let angle = lines.next().and_then(|x| x.trim().parse::<f32>().ok())
+            .unwrap_or(135.0).clamp(0.0, 359.0);
+        let strength = lines.next().and_then(|x| x.trim().parse::<f32>().ok())
+            .unwrap_or(55.0).clamp(0.0, 100.0) / 100.0;
+        (quality, angle, strength)
+    }
+
+    fn create_reloaded_postfx(&self) -> Result<ReloadedPostFx, String> {
+        unsafe {
+            let vertex_source = shader_source(r#"
+                out vec2 v_uv;
+                void main() {
+                    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+                    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+                    // Match the vertically inverted source framebuffer from present().
+                    v_uv = vec2(p.x, 1.0 - p.y);
+                }
+            "#);
+            let fragment_source = shader_source(include_str!("glsl/reloaded_postfx.glsl"));
+            let gl = &self.gl;
+            let mut shaders: [GLuint; 2] = [0, 0];
+            for (index, (kind, code)) in [
+                (gl::VERTEX_SHADER, &vertex_source),
+                (gl::FRAGMENT_SHADER, &fragment_source),
+            ].iter().enumerate() {
+                let shader = gl.CreateShader(*kind);
+                gl.ShaderSource(shader, 1, &(code.as_ptr() as *const GLchar), ptr::null());
+                gl.CompileShader(shader);
+                let mut success = 0;
+                gl.GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
+                if success == 0 {
+                    gl.DeleteShader(shader);
+                    for old in shaders { if old != 0 { gl.DeleteShader(old); } }
+                    return Err(format!("Fallo de compilación GLSL (paso {})", index));
+                }
+                shaders[index] = shader;
+            }
+            let program = gl.CreateProgram();
+            gl.AttachShader(program, shaders[0]);
+            gl.AttachShader(program, shaders[1]);
+            gl.LinkProgram(program);
+            gl.DeleteShader(shaders[0]);
+            gl.DeleteShader(shaders[1]);
+            let mut success = 0;
+            gl.GetProgramiv(program, gl::LINK_STATUS, &mut success);
+            if success == 0 {
+                gl.DeleteProgram(program);
+                return Err(String::from("No se pudo enlazar el shader postprocesado"));
+            }
+            let mut vao = 0;
+            gl.GenVertexArrays(1, &mut vao);
+            Ok(ReloadedPostFx {
+                program,
+                vao,
+                loc_scene: gl.GetUniformLocation(program, b"u_scene\0".as_ptr().cast()),
+                loc_texel: gl.GetUniformLocation(program, b"u_texel\0".as_ptr().cast()),
+                loc_time: gl.GetUniformLocation(program, b"u_time\0".as_ptr().cast()),
+                loc_quality: gl.GetUniformLocation(program, b"u_quality\0".as_ptr().cast()),
+                loc_sun_dir: gl.GetUniformLocation(program, b"u_sun_dir\0".as_ptr().cast()),
+                loc_shadow_strength: gl.GetUniformLocation(program, b"u_shadow_strength\0".as_ptr().cast()),
+            })
+        }
+    }
+
+    // Returns false on disabled effects or GL errors, preserving the original blit path.
+    fn present_reloaded_postfx(&mut self, x: i32, y: i32, w: i32, h: i32) -> bool {
+        if !self.reloaded_postfx_attempted {
+            self.reloaded_postfx_attempted = true;
+            let (quality, angle, strength) = Self::reloaded_postfx_settings();
+            self.reloaded_postfx_quality = quality;
+            self.reloaded_sun_angle = angle;
+            self.reloaded_shadow_strength = strength;
+            if self.reloaded_postfx_quality != 0 {
+                match self.create_reloaded_postfx() {
+                    Ok(shader) => self.reloaded_postfx = Some(shader),
+                    Err(error) => eprintln!("[reloaded-postfx] {}. Se usa imagen original.", error),
+                }
+            }
+        }
+        let Some(shader) = self.reloaded_postfx else { return false };
+        if w <= 0 || h <= 0 || self.framebuffer.width == 0 || self.framebuffer.height == 0 {
+            return false
+        }
+        unsafe {
+            let gl = &self.gl;
+            let (mut program_old, mut vao_old, mut texture_old, mut active_old) = (0, 0, 0, 0);
+            let mut viewport_old = [0; 4];
+            gl.GetIntegerv(gl::CURRENT_PROGRAM, &mut program_old);
+            gl.GetIntegerv(gl::VERTEX_ARRAY_BINDING, &mut vao_old);
+            gl.GetIntegerv(gl::ACTIVE_TEXTURE, &mut active_old);
+            gl.ActiveTexture(gl::TEXTURE0);
+            gl.GetIntegerv(gl::TEXTURE_BINDING_2D, &mut texture_old);
+            gl.GetIntegerv(gl::VIEWPORT, viewport_old.as_mut_ptr());
+            let blend_old = gl.IsEnabled(gl::BLEND) != 0;
+            let depth_old = gl.IsEnabled(gl::DEPTH_TEST) != 0;
+            let cull_old = gl.IsEnabled(gl::CULL_FACE) != 0;
+            let scissor_old = gl.IsEnabled(gl::SCISSOR_TEST) != 0;
+            gl.Disable(gl::BLEND);
+            gl.Disable(gl::DEPTH_TEST);
+            gl.Disable(gl::CULL_FACE);
+            gl.Disable(gl::SCISSOR_TEST);
+            gl.Viewport(x, y, w, h);
+            gl.UseProgram(shader.program);
+            gl.BindVertexArray(shader.vao);
+            gl.BindTexture(gl::TEXTURE_2D, self.framebuffer.texture);
+            gl.Uniform1i(shader.loc_scene, 0);
+            gl.Uniform2f(shader.loc_texel,
+                1.0 / self.framebuffer.width as f32,
+                1.0 / self.framebuffer.height as f32);
+            gl.Uniform1f(shader.loc_time, self.reloaded_postfx_started.elapsed().as_secs_f32());
+            gl.Uniform1i(shader.loc_quality, self.reloaded_postfx_quality);
+            let sun_radians = self.reloaded_sun_angle.to_radians();
+            gl.Uniform2f(shader.loc_sun_dir, sun_radians.cos(), sun_radians.sin());
+            gl.Uniform1f(shader.loc_shadow_strength, self.reloaded_shadow_strength);
+            gl.DrawArrays(gl::TRIANGLES, 0, 3);
+            let status = gl.GetError();
+            gl.BindTexture(gl::TEXTURE_2D, texture_old as GLuint);
+            gl.ActiveTexture(active_old as GLuint);
+            gl.BindVertexArray(vao_old as GLuint);
+            gl.UseProgram(program_old as GLuint);
+            gl.Viewport(viewport_old[0], viewport_old[1], viewport_old[2], viewport_old[3]);
+            if blend_old { gl.Enable(gl::BLEND) } else { gl.Disable(gl::BLEND) }
+            if depth_old { gl.Enable(gl::DEPTH_TEST) } else { gl.Disable(gl::DEPTH_TEST) }
+            if cull_old { gl.Enable(gl::CULL_FACE) } else { gl.Disable(gl::CULL_FACE) }
+            if scissor_old { gl.Enable(gl::SCISSOR_TEST) } else { gl.Disable(gl::SCISSOR_TEST) }
+            if status != gl::NO_ERROR {
+                eprintln!("[reloaded-postfx] error GL {}: desactivado hasta reiniciar", status);
+                self.reloaded_postfx = None;
+                return false
+            }
+        }
+        true
+    }
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
 impl RendererImpl {
     /// Builds (once) the tiny program used to draw the touch controls over the frame.
     fn overlay_program(&mut self) -> Overlay {
@@ -1949,7 +2151,7 @@ impl RendererImpl {
                 touch_controls::Shape::Circle { cx, cy, .. } | touch_controls::Shape::Rect { cx, cy, .. } => (cx, cy),
             };
             // Moderno: the artwork we already had, drawn semi-transparent.
-            if appearance.style == crate::touch_appearance::Style::Modern {
+            if matches!(appearance.style, crate::touch_appearance::Style::Modern | crate::touch_appearance::Style::ModernV2) {
                 if let Some(uv) = overlay.art(c.name) {
                     let (cx, cy, half) = match touch_controls::window_shape_for(i, ww, wh) {
                         touch_controls::Shape::Circle { cx, cy, r } => (cx * ww, cy * wh, r * ww),
@@ -2016,7 +2218,7 @@ impl RendererImpl {
             let (ox, oy) = stick_offset;
             let mut drew_sprite = false;
             // Artwork is for the joystick; D-pad mode keeps its drawn cross.
-            if appearance.style == crate::touch_appearance::Style::Modern
+            if matches!(appearance.style, crate::touch_appearance::Style::Modern | crate::touch_appearance::Style::ModernV2)
                 && touch_controls::move_mode() == touch_controls::MoveMode::Joystick {
                 if let (Some(base), Some(knob)) = (overlay.art("joystick"), overlay.art("joystick-knob")) {
                     let start = sprites.len();
@@ -2112,7 +2314,11 @@ impl RendererImpl {
 
             // `present` restores whatever framebuffer was bound while the game drew. The overlay
             // must go to the screen (framebuffer 0), not back into the game's offscreen target.
-            gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
+            #[cfg(target_os = "ios")]
+            let screen = eagl::framebuffer();
+            #[cfg(not(target_os = "ios"))]
+            let screen = 0;
+            gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, screen);
             gl.Viewport(0, 0, window_width as i32, window_height as i32);
             gl.Disable(gl::SCISSOR_TEST);
             gl.Disable(gl::DEPTH_TEST);
@@ -2230,29 +2436,6 @@ impl RendererTrait for RendererImpl {
             let textures: Vec<GLuint> = {
                 let mut buf = vec![0 as GLuint; packers.len()];
                 self.gl.GenTextures(buf.len() as _, buf.as_mut_ptr());
-                for (i, (tex_id, packer)) in buf.iter().copied().zip(&packers).enumerate() {
-                    let (width, height) = packer.size();
-
-                    self.gl.BindTexture(gl::TEXTURE_2D, tex_id);
-                    self.current_atlas = i as u32;
-
-                    self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as _);
-                    self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as _);
-                    self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as _);
-                    self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as _);
-                    self.gl.TexImage2D(
-                        gl::TEXTURE_2D,    // target
-                        0,                 // level
-                        gl::RGBA as _,     // internalformat
-                        width as _,        // width
-                        height as _,       // height
-                        0,                 // border ("must be 0")
-                        // GLES has no BGRA; only the allocation happens here, so either works.
-                        if cfg!(any(target_os = "android", target_os = "ios")) { gl::RGBA } else { gl::BGRA },
-                        gl::UNSIGNED_BYTE, // type
-                        ptr::null(),       // data
-                    );
-                }
                 buf
             };
 
@@ -2275,7 +2458,7 @@ impl RendererTrait for RendererImpl {
                 let (atlas_w, atlas_h) = packer.size();
                 let mut atlas_buf = vec![0u8; (atlas_w * atlas_h * 4) as usize];
 
-                for (atl_ref, pixels) in &sprites {
+                for (atl_ref, pixels) in &mut sprites {
                     if atl_ref.atlas_id as usize == atlas_idx {
                         let sw = atl_ref.w as usize;
                         let sh = atl_ref.h as usize;
@@ -2292,23 +2475,24 @@ impl RendererTrait for RendererImpl {
                                 atlas_buf[dst_start..dst_end].copy_from_slice(&pixels[src_start..src_end]);
                             }
                         }
+                        *pixels = Box::new([]);
                     }
                 }
 
                 self.gl.BindTexture(gl::TEXTURE_2D, *tex_id);
                 self.current_atlas = atlas_idx as u32;
 
-                self.gl.TexSubImage2D(
-                    gl::TEXTURE_2D,       // target
-                    0,                    // level
-                    0,                    // xoffset
-                    0,                    // yoffset
-                    atlas_w as _,         // width
-                    atlas_h as _,         // height
+                self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as _);
+                self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as _);
+                self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as _);
+                self.gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as _);
+                self.gl.TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as _, atlas_w, atlas_h, 0,
                     if cfg!(any(target_os = "android", target_os = "ios")) { gl::RGBA } else { gl::BGRA },
-                    gl::UNSIGNED_BYTE,    // type
-                    atlas_buf.as_ptr() as _, // pixels
-                );
+                    gl::UNSIGNED_BYTE, atlas_buf.as_ptr() as _);
+                let status = self.gl.GetError();
+                if status != 0 { return Err(format!("Atlas {atlas_idx}: OpenGL error {status}")); }
+                #[cfg(target_os = "ios")]
+                crate::ios_main::stage(&format!("Texturas {}/{}", atlas_idx + 1, packers.len()));
             }
 
             // verify it actually worked
@@ -3923,7 +4107,7 @@ impl RendererTrait for RendererImpl {
 
             // Where the game image lands on screen, so the controls that belong over it (the dialogue
             // button) can be placed relative to the game instead of the window.
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_os = "ios"))]
             if window_width > 0 && window_height > 0 {
                 crate::touch_controls::set_viewport(
                     w_x as f32 / window_width as f32,
@@ -3941,7 +4125,7 @@ impl RendererTrait for RendererImpl {
                     let frames = FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if crate::game::audio::sound_started() || frames > 900 {
                         READY.store(true, std::sync::atomic::Ordering::Relaxed);
-                        let _ = std::fs::write(crate::android_main::storage_path("game-ready"), b"");
+                        let _ = std::fs::write(mobile::storage_path("game-ready"), b"");
                     }
                 }
             }
@@ -3972,24 +4156,32 @@ impl RendererTrait for RendererImpl {
             // here. For a full-height or centred rectangle the two agree, so only the keyboard inset
             // - which anchors the game to the top - actually needs the flip.
             let blit_y = window_height - w_y - w_h;
-            self.gl.BlitFramebuffer(
-                0,
-                fb_height,
-                fb_width,
-                0,
-                w_x,
-                blit_y,
-                w_x + w_w,
-                blit_y + w_h,
-                gl::COLOR_BUFFER_BIT,
-                if cfg!(any(target_os = "android", target_os = "ios")) {
-                    gl::NEAREST
-                } else if self.next_render_state.interpolate_pixels.into() {
-                    gl::LINEAR
-                } else {
-                    gl::NEAREST
-                },
-            );
+            // Postprocess the scene before the overlay. Preserve the original blit as fallback.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let reloaded_fx_drawn = self.present_reloaded_postfx(w_x, blit_y, w_w, w_h);
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            let reloaded_fx_drawn = false;
+            if !reloaded_fx_drawn {
+                self.gl.BlitFramebuffer(
+                    0,
+                    fb_height,
+                    fb_width,
+                    0,
+                    w_x,
+                    blit_y,
+                    w_x + w_w,
+                    blit_y + w_h,
+                    gl::COLOR_BUFFER_BIT,
+                    if cfg!(any(target_os = "android", target_os = "ios")) {
+                        gl::NEAREST
+                    } else if self.next_render_state.interpolate_pixels.into() {
+                        gl::LINEAR
+                    } else {
+                        gl::NEAREST
+                    },
+                );
+            }
+
             debug_assert_eq!(self.gl.GetError(), 0);
             self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, fb_old as u32);
             debug_assert_eq!(self.gl.GetError(), 0);
@@ -3999,7 +4191,7 @@ impl RendererTrait for RendererImpl {
             debug_assert_eq!(self.gl.GetError(), 0);
 
             // On-screen touch controls (Android): drawn on top of the presented frame.
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_os = "ios"))]
             self.draw_touch_overlay(window_width_u, window_height_u);
 
             // Present buffer

@@ -2,7 +2,7 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Style { Modern, Classic }
+pub enum Style { Modern, ModernV2, Classic }
 #[derive(Clone, Copy)]
 pub struct Settings { pub style: Style, pub tint: Option<[f32;3]>, pub animations: bool, pub haptics: bool }
 impl Settings { const DEFAULT: Self = Self { style: Style::Modern, tint: None, animations: true, haptics: true }; }
@@ -29,7 +29,7 @@ pub fn load(text: &str) {
         for line in text.lines().skip(1) {
             let Some((key,value))=line.split_once('=') else {continue};
             match key.trim() {
-                "style" => s.style=match value.trim(){"classic"|"minimal"|"pixel"=>Style::Classic,_=>Style::Modern},
+                "style" => s.style=match value.trim(){"modern_v2"=>Style::ModernV2,"classic"|"minimal"|"pixel"=>Style::Classic,_=>Style::Modern},
                 "animations" => s.animations=value.trim()!="0",
                 "haptics" => s.haptics=value.trim()!="0",
                 "tint" => {

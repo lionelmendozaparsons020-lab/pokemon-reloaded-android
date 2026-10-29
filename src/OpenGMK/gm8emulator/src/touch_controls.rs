@@ -186,7 +186,7 @@ pub const CLASSIC_CONTROLS: &[Control] = &[
     Control { name: "alt", key: Key::LeftAlt, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Alt"), contexts: 0 },
     Control { name: "ctrl", key: Key::LeftControl, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Ctrl"), contexts: 0 },
     Control { name: "d", key: Key::D, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("D"), contexts: 0 },
-    Control { name: "f3", key: Key::F3, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("F3"), contexts: 0 },
+    Control { name: "f3", key: Key::F3, shape: Shape::Circle { cx: 0.950, cy: 0.085, r: 0.027 }, label: Label::Text("F3"), contexts: 0 },
     Control { name: "h", key: Key::H, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("H"), contexts: 0 },
     Control { name: "k", key: Key::K, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("K"), contexts: 0 },
 ];
@@ -253,7 +253,7 @@ pub const NEW_CONTROLS: &[Control] = &[
     Control { name: "alt", key: Key::LeftAlt, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Alt"), contexts: 0 },
     Control { name: "ctrl", key: Key::LeftControl, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("Ctrl"), contexts: 0 },
     Control { name: "d", key: Key::D, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("D"), contexts: 0 },
-    Control { name: "f3", key: Key::F3, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("F3"), contexts: 0 },
+    Control { name: "f3", key: Key::F3, shape: Shape::Circle { cx: 0.950, cy: 0.085, r: 0.027 }, label: Label::Text("F3"), contexts: 0 },
     Control { name: "h", key: Key::H, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("H"), contexts: 0 },
     Control { name: "k", key: Key::K, shape: Shape::Circle { cx: 0.500, cy: 0.500, r: 0.028 }, label: Label::Text("K"), contexts: 0 },
 ];
@@ -805,6 +805,8 @@ fn log_state_change(_room: i32) {}
 
 /// Which group of controls the current game state needs.
 pub fn current_context() -> u8 {
+    #[cfg(target_os = "ios")]
+    if let Some(context) = crate::ios_main::preview_context() { return context; }
     // A dialogue box takes over the overlay: only the buttons that go with it are shown, so the text
     // and the portrait stay readable.
     if dialogue_open() {
@@ -895,9 +897,21 @@ pub fn info_window_open() -> bool {
     INFO_WINDOW_OPEN.load(Ordering::Relaxed)
 }
 
+static OFFICIAL_F3_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_official_f3_enabled(enabled: bool) {
+    OFFICIAL_F3_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
 pub fn is_active(index: usize) -> bool {
     if overlay_style() == OverlayStyle::None {
         return false
+    }
+    // Game's own F3 command prompt: opt-in and only in the overworld, never in a
+    // dialogue, battle, bag or PC. Respect a hidden button in custom layouts.
+    if controls()[index].name == "f3" && OFFICIAL_F3_ENABLED.load(Ordering::Relaxed) {
+        return current_context() == WORLD && !pad_active() && !info_window_open()
+            && !layout_override("f3").is_some_and(|entry| !entry.visible);
     }
     if ROOM.load(Ordering::Relaxed) == PUZZLE_ROOM
         && matches!(controls()[index].name, ROTATE_NAME | "f1" | "x")
@@ -1048,7 +1062,8 @@ pub fn set_move_mode(mode: MoveMode) {
 
 pub fn move_mode() -> MoveMode {
     // Moderno always moves with the joystick; the choice only exists for the classic look.
-    if crate::touch_appearance::settings().style == crate::touch_appearance::Style::Modern {
+    if matches!(crate::touch_appearance::settings().style,
+        crate::touch_appearance::Style::Modern | crate::touch_appearance::Style::ModernV2) {
         return MoveMode::Joystick
     }
     if MOVE.load(Ordering::Relaxed) == 1 {

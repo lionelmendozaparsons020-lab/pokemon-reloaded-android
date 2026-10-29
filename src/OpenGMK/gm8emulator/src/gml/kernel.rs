@@ -564,7 +564,7 @@ impl Game {
         }
         // A dialogue redraws from inside its own wait, so the controls' state is refreshed here as
         // well as once per frame; otherwise the frame loop never comes round during a dialogue.
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         self.sync_overlay();
         self.draw()?;
         let (width, height) = self.window_inner_size;
@@ -579,7 +579,7 @@ impl Game {
         if self.interp_draw {
             return Ok(Default::default())
         }
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         self.sync_overlay();
         let (width, height) = self.window_inner_size;
         if self.play_type != PlayType::Record {

@@ -1,0 +1,821 @@
+1|Poké Ball
+2|Super Ball
+3|Ultra Ball
+4|Master Ball
+5|Safari Ball
+6|Honor Ball
+7|Malla Ball
+8|Buceo Ball
+9|Turno Ball
+10|Lujo Ball
+11|Nido Ball
+12|Acopio Ball
+13|Star Ball
+14|GS Ball
+15|Poción
+16|Superpoción
+17|Hiperpoción
+18|Poción Máxima
+19|Restaurar Todo
+20|Cura Total
+21|Revivir
+22|Revivir Máximo
+23|Agua Fresca
+24|Refresco
+25|Limonada
+26|Leche Mu-Mu
+27|Antídoto
+28|Antiquemar
+29|Antihielo
+30|Despertar
+31|Antiparalizador
+32|Más PS
+33|Calcio
+34|Hierro
+35|Carbohidratos
+36|Proteína
+37|Zinc
+38|Caramelo Raro
+39|Repelente
+40|SuperRepel
+41|MaxRepel
+42|Cuerda Huida
+43|Piedra Solar
+44|Piedra Lunar
+45|Piedra Fuego
+46|Piedra Trueno
+47|Piedra Agua
+48|Piedra Hoja
+49|Piedra Día
+50|Piedra Noche
+51|Piedra Alba
+52|Piedra Oval
+53|Roca Del Rey
+54|Piedra Hielo
+55|Tela Terrible
+56|Garra Afilada
+57|Colmillo Agudo
+58|Cuchara Torcida
+59|Cinturón Negro
+60|Piedra Dura
+61|Hechizo
+62|Rev. Metálico
+63|Electrizador
+64|Magmatizador
+65|Protector
+66|Mejora
+67|Disco Extraño
+68|Diente Marino
+69|Escama Marina
+70|Escama Dragón
+71|Ceniza Sagrada
+72|Ámbar Viejo
+73|Fósil Helix
+74|Fósil Domo
+75|Fósil Raíz
+76|Fósil Garra
+77|Fósil Coraza
+78|Fósil Cráneo
+79|Perla Pequeña
+80|Perla Grande
+81|Pepita
+82|Zafiro
+83|Rubí
+84|Esmeralda
+85|Trozo Estrella
+86|Polvo Estelar
+87|Hueso Raro
+88|MiniSeta
+89|Seta Grande
+90|Piedra Eterna
+91|Tabla Neutra
+92|Tabla Fuego
+93|Tabla Linfa
+94|Tabla Pradal
+95|Tabla Trueno
+96|Tabla Pétrea
+97|Tabla Fuerte
+98|Tabla Terrax
+99|Tabla Mental
+100|Tabla Tóxica
+101|Tabla Bicho
+102|Tabla Helada
+103|Tabla Oscura
+104|Tabla Acero
+105|Tabla Cielo
+106|Tabla Terror
+107|Tabla Draco
+108|Tabla Prohibida
+109|Baya Zreza
+110|Baya Atania
+111|Baya Meloc
+112|Baya Safre
+113|Baya Perasi
+114|Baya Zanama
+115|Baya Aranja
+116|Baya Caquic
+117|Baya Ziuela
+118|Baya Zidra
+119|Baya Higog
+120|Baya Wiki
+121|Baya Ango
+122|Baya Guaya
+123|Baya Pabaya
+124|Baya Frambu
+125|Baya Oram
+126|Baya Latano
+127|Baya Peragu
+128|Baya Pinia
+129|Baya Grana
+130|Baya Algama
+131|Baya Ispero
+132|Baya Meluce
+133|Baya Uvav
+134|Baya Tamate
+135|Baya Mais
+136|Baya Aostan
+137|Baya Rautan
+138|Baya Monli
+139|Baya Wikano
+140|Baya Plama
+141|Baya Sambia
+142|Baya Rudion
+143|Baya Andano
+144|Baya Lichi
+145|Baya Gonlan
+146|Baya Aslac
+147|Baya Yapati
+148|Baya Aricoc
+149|Baya Zonlan
+150|Baya Arabol
+151|Baya Enigma
+152|Ala Plateada
+153|Ala Arcoíris
+154|Pluma Lunar
+155|Lustresfera
+156|Diamansfera
+157|Griseosfera
+158|Flor Gracídea
+159|Piedra Magma
+160|Esfera Azul
+161|Esfera Roja
+162|Esfera Verde
+163|Repartir Exp.
+164|Mon. Amuleto
+165|Anillo Elec.
+166|GPS
+167|Llave Rekiem
+168|Regadera
+169|Monedero
+170|Paquete Oculto
+171|Hierba Especial
+172|Cuchillo
+173|Hacha
+174|Arco
+175|Flauta Azur
+176|SmartPhone
+177|Llave Central
+178|Llave Matarile
+179|Llave Rocket
+180|Inhibidor de Exp.
+181|Caña Vieja
+182|Caña Buena
+183|Súper Caña
+184|Bicicleta
+185|xPod Star
+186|Mapa
+187|Flauta Pkmn
+188|Pase Misterio
+189|Pase Solar
+190|Pase Oscuro
+191|Pase Jungla
+192|Pase Frente
+193|Mega-Aro
+194|MO1 Corte
+195|MO2 Vuelo
+196|MO3 Surf
+197|MO4 Fuerza
+198|MO5 Destello
+199|MO6 Golpe Roca
+200|MO7 Buceo
+201|MT1 Teletransporte
+202|MT2 Puño Dinámico
+203|MT3 Garra Dragón
+204|MT4 Velo Sagrado
+205|MT5 Sustituto
+206|MT6 Tóxico
+207|MT7 Bomba Lodo
+208|MT8 Cola Férrea
+209|MT9 Tormenta Arena
+210|MT10 Día Soleado
+211|MT11 Danza Lluvia
+212|MT12 Granizo
+213|MT13 Poder Oculto
+214|MT14 Doble Equipo
+215|MT15 Hiperrayo
+216|MT16 Excavar
+217|MT17 Terremoto
+218|MT18 Protección
+219|MT19 Onda Voltio
+220|MT20 Onda Certera
+221|MT21 Golpe Aéreo
+222|MT22 Viento Plata
+223|MT23 Pulso Dragón
+224|MT24 Onda Trueno
+225|MT25 Rayo
+226|MT26 Trueno
+227|MT27 Rayo Hielo
+228|MT28 Ventisca
+229|MT29 Psíquico
+230|MT30 Bola Sombra
+231|MT31 Lanzallamas
+232|MT32 Llamarada
+233|MT33 Gigadrenado
+234|MT34 Rayo Solar
+235|MT35 Tumbarocas
+236|MT36 Avalancha
+237|MT37 Pulso Umbrío
+238|MT38 Puya Nociva
+239|MT39 Gigaimpacto
+240|MT40 Hidropulso
+241|MT41 Explosión
+242|MT42 Tijera X
+243|MT43 Descanso
+244|MT44 Falsotortazo
+245|MT45 Daño Secreto
+246|MT46 Vel. Extrema
+247|MT47 Torbellino
+248|MT48 Cascada
+249|MT49 Ola-Lava
+250|MT50 Treparrocas
+251|MT51 Metrónomo
+252|MT52 Mimético
+253|MT53 Dulce Aroma
+254|MT54 Dragoaliento
+255|MT55 Puño Trueno
+256|MT56 Puño Fuego
+257|MT57 Puño Hielo
+258|MT58 Puño Drenaje
+259|MT59 Respiro
+260|MT60 Salmuera
+261|MT61 Imagen
+262|MT62 Roca Afilada
+263|MT63 Energibola
+264|MT64 Seducción
+265|MT65 Cañón Resp.
+266|MT66 Intercambio
+267|MT67 Demolición
+268|MT68 Contoneo
+269|MT69 Ladrón
+270|MT70 Gran Ojo
+271|MT71 Electrocañón
+272|MT72 Pantalla Luz
+273|MT73 Reflejo
+274|MT74 Levitón
+275|MT75 Espacio Raro
+276|MT76 Psicocarga
+277|MT77 Cargatóxica
+278|MT78 Antiaéreo
+279|MT79 Terratemblor
+280|MT80 Escaldar
+281|MT81 Ida y vuelta
+282|MT82 Acróbata
+283|MT83 Represalia
+284|MT84 Estoicismo
+285|MT85 Avivar
+286|MT86 Cola dragón
+287|MT87 Alarido
+288|MT88 Paz Mental
+289|MT89 Vaho gélido
+290|MT90 Voltio cruel
+291|Antibiótico
+292|Antiamor
+293|Antimaldic.
+294|Max. Elixir
+295|Ataque X
+296|Defensa X
+297|Velocidad X
+298|Precisión X
+299|Especial X
+300|Def. Espec. X
+301|Directo
+302|Prot. Especial
+303|Restos
+304|Campana Concha
+305|Lodo Negro
+306|Maxipepita
+307|Sarta perlas
+308|Seta Aromática
+309|Frag. Cometa
+310|Pañuelo Seda
+311|Carbón
+312|Agua Mística
+313|Semilla Milagro
+314|Imán
+315|Arena Fina
+316|Polvo Plata
+317|Flecha Ven.
+318|Antiderretir
+319|Gafas de Sol
+320|Pico Afilado
+321|Colmillo Dragón
+322|Piedra Mineral
+323|Roca Mágica
+324|Pesas
+325|Cinta Ninja
+326|Lanza
+327|Escama Bella
+328|Fósil Pluma
+329|Fósil Tapa
+330|Bola Luminosa
+331|Bola Aural
+332|Bola Eon
+333|Bola Hierba
+334|Bola Ardiente
+335|Bola Acuática
+336|Capa Antigua
+337|Armadura Esp.
+338|Orbe Claro
+339|Orbe Oscuro
+340|Piedra Dios
+341|PiroROM
+342|HidroROM
+343|FulgoROM
+344|CrioROM
+345|Amuleto Iris
+346|Huevo Suerte
+347|Miel
+348|Mineral Evol.
+349|Llamasfera
+350|Toxisfera
+351|Toxiestrella
+352|Banda Atadura
+353|Banda Focus
+354|Blanco
+355|Bola Férrea
+356|Botón Escape
+357|Casco Dentado
+358|Cinta Elección
+359|Cinta Experto
+360|Cinta Focus
+361|Gafas Especiales
+362|Gafas Elección
+363|Garra Rápida
+364|Gen Loco
+365|Lazo Destino
+366|Lazo Negro
+367|Pañuelo Elección
+368|Periscopio
+369|Pila
+370|Raíz Grande
+371|Refleluz
+372|Roca Calor
+373|Roca Helada
+374|Roca Lluvia
+375|Roca Suave
+376|Telescopio
+377|Vidasfera
+378|Braz. Conduct.
+379|Braz. Justicia
+380|Braz. Espíritu
+381|Braz. Terrenal
+382|Braz. Celestial
+383|Braz. Corrosivo
+384|Gema Normal
+385|Gema Fuego
+386|Gema Agua
+387|Gema Planta
+388|Gema Eléctrica
+389|Gema Roca
+390|Gema Lucha
+391|Gema Tierra
+392|Gema Psíquica
+393|Gema Veneno
+394|Gema Bicho
+395|Gema Hielo
+396|Gema Siniestra
+397|Gema Acero
+398|Gema Voladora
+399|Gema Fantasma
+400|Gema Dragón
+401|Pesa Recia
+402|Brazal Recio
+403|Cinto Recio
+404|Lente Recia
+405|Banda Recia
+406|Franja Recia
+407|Espejo Veraz
+408|Mewtwoita X
+409|Mewtwoita Y
+410|Tabla Duende
+411|Varita Mágica
+412|Piedra Ninfa
+413|Gema Hada
+414|Ampharosita
+415|Venusaurita
+416|Charizardita X
+417|Charizardita Y
+418|Blastoisita
+419|Pikabluita
+420|Lucarita
+421|Blazikenita
+422|Gardevoirita
+423|Absolita
+424|Mawilita
+425|Abomasnowita
+426|Aerodactylita
+427|Aggronita
+428|Alakazamita
+429|Banettita
+430|Garchompita
+431|Gengarita
+432|Gyaradosita
+433|Heracrossita
+434|Houndoomita
+435|Kangaskhanita
+436|Manectricita
+437|Medichamita
+438|Pinsirita
+439|Scizorita
+440|Tyranitarita
+441|Braz. Mágico
+442|Prisma Oscuro
+443|Prisma Primario
+444|Latiasita
+445|Latiosita
+446|Sceptilita
+447|Swampertita
+448|Sableynita
+449|Diancita
+450|Prisma Rojo
+451|Prisma Azul
+452|Slowbronita
+453|Metagrossita
+454|Salamencita
+455|Audinita
+456|Galladita
+457|Beedrillita
+458|Pidgeotita
+459|Steelixita
+460|Glalita
+461|Sharpedonita
+462|Cameruptita
+463|Altarianita
+464|Lopunnita
+465|Saquito Fragante
+466|Dulce de Nata
+467|Estatuilla Rara
+468|Fósil Aleta
+469|Fósil Mandíbula
+470|Vasija Castigo
+471|Corona Hipnótica
+472|Rapid Ball
+473|Nivel Ball
+474|Cebo Ball
+475|Peso Ball
+476|Amor Ball
+477|Amigo Ball
+478|Luna Ball
+479|Sana Ball
+480|Ocaso Ball
+481|Veloz Ball
+482|Gloria Ball
+483|Black Ball
+484|Cuaderno
+485|Necrosol
+486|Necroluna
+487|Ultranecrostal Z
+488|Normastal Z
+489|Pirostal Z
+490|Hidrostal Z
+491|Fitostal Z
+492|Electrostal Z
+493|Litostal Z
+494|Lizastal Z
+495|Geostal Z
+496|Psicostal Z
+497|Toxistal Z
+498|Insectostal Z
+499|Criostal Z
+500|Nictostal Z
+501|Metalostal Z
+502|Aerostal Z
+503|Espectrostal Z
+504|Dracostal Z
+505|Feeristal Z
+506|Pikastal Z
+507|Ash-Pikastal Z
+508|Alo-Raistal Z
+509|Eeveestal Z
+510|Snorlastal Z
+511|Mewstal Z
+512|Dueyestal Z
+513|Incinostal Z
+514|Primastal Z
+515|Tapistal Z
+516|Marshastal Z
+517|Kommostal Z
+518|Lycanrostal Z
+519|Solgaleostal Z
+520|Lunalastal Z
+521|Mimikyustal Z
+522|Ente Ball
+523|Amuleto oval
+524|Real cobre
+525|Real plata
+526|Real oro
+527|Ánfora
+528|Brazal Plata
+529|Efigie antigua
+530|Corona antigua
+531|Arca de Zygarde
+532|Bola de nieve
+533|Tubérculo
+534|Musgo brillante
+535|Cápsula habilidad
+536|Cápsula candado
+537|Chapa dorada
+538|Chapa plateada
+539|Chaleco asalto
+540|Hueso grueso
+541|Rocío bondad
+542|Globo helio
+543|Puerro
+544|Polvo veloz
+545|Polvo brillo
+546|Polvo metálico
+547|Polvo curación
+548|Polvo energía
+549|Raíz energía
+550|Hierba revivir
+551|Néctar amarillo
+552|Néctar rojo
+553|Néctar rosa
+554|Néctar violeta
+555|Flauta amarilla
+556|Flauta azul
+557|Flauta roja
+558|Flauta verde
+559|Flauta violeta
+560|Flauta blanca
+561|Flauta negra
+562|Flauta solar
+563|Flauta lunar
+564|Hierba blanca
+565|Hierba única
+566|Hierba mental
+567|Maleta
+568|Superpulsera Z
+569|Muda concha
+570|Paracontacto
+571|Puño suerte
+572|Sal cardumen
+573|Seguro debilidad
+574|Semilla bruma
+575|Semilla electro
+576|Semilla hierba
+577|Semilla psique
+578|Talismán
+579|Té
+580|Zumo de baya
+581|Vale descuento
+582|Barrita plus
+583|Concha cardumen
+584|Tarjeta roja
+585|Tarjeta Plasma
+586|Pluma vigor
+587|Pluma músculo
+588|Pluma aguante
+589|Pluma intelecto
+590|Pluma mente
+591|Pluma ímpetu
+592|Pluma bella
+593|Cubresuelos
+594|Garra garfio
+595|Caramelo furia
+596|Galleta lava
+597|Porcehelado
+598|Crepe Luminalia
+599|Galleta Yantra
+600|Malasada maxi
+601|Piedra Desierto
+602|Piedra Bicho
+603|Piedra Celeste
+604|Piedra Venus
+605|Piedra Marte
+606|Piedra Metálica
+607|Cable Verde
+608|Cable Azul
+609|Cable Violeta
+610|Cable Rojo
+611|Cable Amarillo
+612|Cetro Esmeralda
+613|Cetro Rubí
+614|Cetro Zafiro
+615|Cetro Bronce
+616|Cetro Plateado
+617|Cetro Dorado
+618|MT91 Ala De Acero
+619|MT92 Brillo Mágico
+620|MT93 Hierba Lazo
+621|MT94 Danza Espada
+622|MT95 Giro Vil
+623|MT96 Carantoña
+624|MT97 Desarme
+625|MT98 Vendetta
+626|MT99 Pataleta
+627|MT100 Fuerza Lunar
+628|MT101 Puño Sombra
+629|MT102 Hidrobomba
+630|MT103 Beso Drenaje
+631|MT104 Joya De Luz
+632|MT105 Vendaval
+633|MT106 Pájaro Osado
+634|MT107 Truco
+635|MT108 Triturar
+636|MT109 Zumbido
+637|MT110 Megacuerno
+638|Pendiente Star
+639|Vasija Ancestral
+640|Pergamino Secreto
+641|Anillo Maldito
+642|Manzana Ácida
+643|Manzana Dulce
+644|Tetera Rota
+645|Cola Plúmbea
+646|Puerro Grueso
+647|Brazal Galanuez
+648|Corona Galanuez
+649|Confite Fresa
+650|Confite Corazón
+651|Confite Flor
+652|Confite Estrella
+653|Confite Trébol
+654|Confite Fruto
+655|Confite Lazo
+656|Escudo Oxidado
+657|Espada Oxidada
+658|Maximuñequera
+659|Cristal Dinamax
+660|Caramelo Dinamax
+661|Crin Blanca
+662|Crin Negra
+663|Pétalo Fulgor
+664|Riendas Unión
+665|Estrella Deseo
+666|Ictiofósil
+667|Dracofósil
+668|Ornitofósil
+669|Plesiofósil
+670|Bloque Turba
+671|Mineral Negro
+672|Raichita Star
+673|Eeveeita
+674|Dron Star
+675|Amuleto Exp.
+676|Amuleto Puro
+677|Piedra Nivel
+678|Piedra Pre-Evolutiva
+679|Bolsa de Monedas
+680|Botas Gruesas
+681|Corazón Dulce
+682|Rokikos
+683|Caramelo Exp. XS
+684|Caramelo Exp. S
+685|Caramelo Exp. M
+686|Caramelo Exp. L
+687|Caramelo Exp. XL
+688|Metrónomo
+689|Armadura Auspiciosa
+690|Armadura Maldita
+691|Manzana Melosa
+692|Cuenco Exquisito
+693|Metal Compuesto
+694|Mascara Turquesa
+695|Mascara Cimiento
+696|Mascara Fuente
+697|Mascara Horno
+698|Mochi Vigor
+699|Mochi Músculo
+700|Mochi Aguante
+701|Mochi Intelecto
+702|Mochi Mente
+703|Mochi Impetu
+704|Mochi Reinicio
+705|Teralito Normal
+706|Teralito Fuego
+707|Teralito Agua
+708|Teralito Planta
+709|Teralito Eléctrico
+710|Teralito Roca
+711|Teralito Lucha
+712|Teralito Tierra
+713|Teralito Psíquico
+714|Teralito Veneno
+715|Teralito Bicho
+716|Teralito Hielo
+717|Teralito Siniestro
+718|Teralito Acero
+719|Teralito Volador
+720|Teralito Fantasma
+721|Teralito Dragón
+722|Teralito Hada
+723|Teralito Astral
+724|Colonia
+725|Supercolonia
+726|Colonia Máxima
+727|Hierba Copia
+728|Capa Furtiva
+729|Guante de Boxeo
+730|Supertapones
+731|Espray Bucal
+732|Dado Trucado
+733|Gafa protectora
+734|Gragea Ofensiva
+735|Gragea Defensiva
+736|Gragea Multi
+737|Gragea Crítica
+738|Gragea Evasiva
+739|Nerviosfera
+740|Tabla Legendaria
+741|Baya Chilan
+742|Baya Caoca
+743|Baya Pasio
+744|Baya Tamar
+745|Baya Gualot
+746|Baya Alcho
+747|Baya Pomaro
+748|Baya Acardo
+749|Baya Payapa
+750|Baya Kebia
+751|Baya Yecana
+752|Baya Rimoya
+753|Baya Dillo
+754|Baya Bariba
+755|Baya Kouba
+756|Baya Drasi
+757|Baya Anjiro
+758|Baya Hibis
+759|Baya Lagro
+760|Baya Chiri
+761|Baya Jaboca
+762|Baya Magua
+763|Baya Maranga
+764|Baya Biglia
+765|Baya Lupu
+766|Incienso Suave
+767|Incienso Roca
+768|Incienso Acua
+769|Incienso Floral
+770|Incienso Marino
+771|Incienso Lento
+772|Incienso Duplo
+773|Incienso Raro
+774|Incienso Puro
+775|Scyclawita
+776|Cryogelixita
+777|Starmita
+778|Clefablita
+779|Victreebelita
+780|Dragonitita
+781|Meganiumita
+782|Feraligatrita
+783|Skarmorita
+784|Froslassita
+785|Emboarita
+786|Excadrillita
+787|Scolipedita
+788|Scraftita
+789|Eelektrossita
+790|Chandelurita
+791|Chesnaughtita
+792|Delphoxita
+793|Greninjanita
+794|Pyroarita
+795|Floettita
+796|Malamarita
+797|Barbaraclita
+798|Dragalgita
+799|Hawluchanita
+800|Zygardita
+801|Drampanita
+802|Falinksita
+803|Raichita X
+804|Raichita Y
+805|Baxcaliburita
+806|Chimechita
+807|Absolita Z
+808|Garchompita Z
+809|Staraptorita
+810|Lucarita Z
+811|Heatranita
+812|Darkrainita
+813|Golurkita
+814|Meowsticita
+815|Crabominablita
+816|Golisopodita
+817|Magearnita
+818|Zeraoranita
+819|Scovillainita
+820|Glimmoranita
+821|Tatsugirita

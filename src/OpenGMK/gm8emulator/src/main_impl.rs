@@ -216,6 +216,11 @@ pub fn run_game(args: Vec<String>) -> i32 {
         },
     };
 
+    // The decoded assets own their bytes. Do not retain a second full EXE during launch/play.
+    drop(file);
+    #[cfg(target_os = "ios")]
+    crate::ios_main::stage("Ejecutable leído; copia de entrada liberada");
+
     let absolute_path = match file_path.canonicalize() {
         Ok(p) => p,
         Err(e) => {

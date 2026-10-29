@@ -14,3 +14,11 @@ void gm_ios_set_active(bool active);
 void gm_ios_close(void);
 void gm_ios_resize(uint16_t w,uint16_t h);
 void gm_ios_audio_fill(float *out,uint32_t frames);
+
+void gm_ios_configure(const char *documents);
+void gm_ios_touch(uint32_t kind,int32_t id,float x,float y);
+void gm_ios_pump(void);
+void gm_ios_tap(uint32_t code);
+void gm_ios_ime_inset(uint32_t pixels);
+
+void gm_ios_layout_json(uint8_t context,float w,float h,char *out,size_t size);
