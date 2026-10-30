@@ -9,9 +9,14 @@
 @property(nonatomic,strong)NSArray *controls;
 @end
 @implementation ControlEditor
+-(UIInterfaceOrientationMask)supportedInterfaceOrientations{return UIInterfaceOrientationMaskLandscape;}
+-(UIInterfaceOrientation)preferredInterfaceOrientationForPresentation{return UIInterfaceOrientationLandscapeRight;}
+-(void)viewDidAppear:(BOOL)animated{[super viewDidAppear:animated];RequestOrientation(self,UIInterfaceOrientationMaskLandscape);}
+-(void)done{[self dismissViewControllerAnimated:YES completion:nil];}
 -(NSString *)profileName{return @[@"world",@"battle",@"dialog",@"character",@"choice",@"safari",@"menu_nav",@"menu"][self.profiles.selectedSegmentIndex];}
 -(void)viewDidLoad{
     [super viewDidLoad];self.title=@"Distribución de controles";self.view.backgroundColor=UIColor.systemBackgroundColor;
+    self.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc]initWithTitle:@"Listo" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.entries=[NSMutableDictionary new];
     NSString *saved=[NSString stringWithContentsOfFile:[Documents() stringByAppendingPathComponent:@"touch-layout.conf"] encoding:NSUTF8StringEncoding error:nil];
     for(NSString *line in [saved componentsSeparatedByString:@"\n"]){NSArray *f=[line componentsSeparatedByString:@" "];if(f.count==6)self.entries[[NSString stringWithFormat:@"%@ %@",f[0],f[1]]]=line;}
@@ -86,57 +91,6 @@
     [a addAction:[UIAlertAction actionWithTitle:@"Restablecer" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){
         NSString *prefix=[[self profileName] stringByAppendingString:@" "];for(NSString *key in [self.entries.allKeys copy])if([key hasPrefix:prefix])[self.entries removeObjectForKey:key];[self persist];[self reload];
     }]];[self presentViewController:a animated:YES completion:nil];
-}
-@end
-
-@interface ReloadedSettings : UITableViewController
-@end
-@implementation ReloadedSettings
--(void)viewDidLoad{
-    [super viewDidLoad];self.title=@"Ajustes";self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc]initWithTitle:@"Listo" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
-    [NSUserDefaults.standardUserDefaults registerDefaults:@{@"touchStyle":@1,@"touchOpacity":@100,@"touchAnimations":@YES,@"touchHaptics":@YES,@"stretch":@NO,@"showFPS":@NO,@"renderRate":@0,@"shaders":@0}];
-}
--(void)done{[self dismissViewControllerAnimated:YES completion:nil];}
--(NSInteger)numberOfSectionsInTableView:(UITableView *)tableView{return 3;}
--(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{return section==0?5:section==1?4:1;}
--(NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section{return @[@"Controles de Android",@"Imagen y rendimiento",@"Archivos"][section];}
--(UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)ip{
-    UITableViewCell *c=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];NSUserDefaults *d=NSUserDefaults.standardUserDefaults;
-    NSArray *labels=ip.section==0?@[@"Estilo",@"Editar posiciones y tamaños",@"Opacidad",@"Animaciones",@"Vibración"]:ip.section==1?@[@"Estirar pantalla",@"Mostrar FPS",@"Límite de dibujo",@"Shaders y sombras"]:@[@"Partidas y controles en Archivos"];
-    c.textLabel.text=labels[ip.row];c.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    if(ip.section==0&&ip.row==0)c.detailTextLabel.text=@[@"Moderno",@"Moderno V2",@"Clásico"][[d integerForKey:@"touchStyle"]];
-    if(ip.section==0&&ip.row==2)c.detailTextLabel.text=[NSString stringWithFormat:@"%ld%%",(long)[d integerForKey:@"touchOpacity"]];
-    if(ip.section==1&&ip.row==2)c.detailTextLabel.text=@[@"Nativo",@"60 FPS",@"120 FPS"][[d integerForKey:@"renderRate"]];
-    if(ip.section==1&&ip.row==3)c.detailTextLabel.text=@[@"Desactivados",@"Suaves",@"Completos"][[d integerForKey:@"shaders"]];
-    NSString *key=ip.section==0?(ip.row==3?@"touchAnimations":ip.row==4?@"touchHaptics":nil):(ip.section==1?(ip.row==0?@"stretch":ip.row==1?@"showFPS":nil):nil);
-    if(key){UISwitch *s=[UISwitch new];s.on=[d boolForKey:key];s.accessibilityIdentifier=key;[s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged];c.accessoryView=s;}
-    return c;
-}
--(void)save{
-    NSUserDefaults *d=NSUserDefaults.standardUserDefaults;
-    NSDictionary *files=@{
-        @"touch.conf":[NSString stringWithFormat:@"style=classic\nmove=joystick\nscale=1\nopacity=%.2f\n",[d integerForKey:@"touchOpacity"]/100.0],
-        @"touch-appearance.conf":[NSString stringWithFormat:@"touch-appearance-v1\nstyle=%@\ntint=original\nanimations=%d\nhaptics=%d\n",@[@"modern",@"modern_v2",@"classic"][[d integerForKey:@"touchStyle"]],[d boolForKey:@"touchAnimations"],[d boolForKey:@"touchHaptics"]],
-        @"video.conf":[NSString stringWithFormat:@"scaling=%@\nrender=%@\nshow_fps=%d\n",[d boolForKey:@"stretch"]?@"full":@"aspect",@[@"native",@"60",@"120"][[d integerForKey:@"renderRate"]],[d boolForKey:@"showFPS"]],
-        @"shaders.txt":[NSString stringWithFormat:@"%@\n135\n55\n",@[@"off",@"lite",@"high"][[d integerForKey:@"shaders"]]]
-    };
-    for(NSString *name in files)[(NSString *)files[name] writeToFile:[Documents() stringByAppendingPathComponent:name] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    [self.tableView reloadData];
-}
--(void)toggle:(UISwitch *)s{[NSUserDefaults.standardUserDefaults setBool:s.on forKey:s.accessibilityIdentifier];[self save];}
--(void)choose:(NSArray *)titles values:(NSArray *)values key:(NSString *)key{
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Elegir" message:nil preferredStyle:UIAlertControllerStyleAlert];
-    for(NSUInteger i=0;i<titles.count;i++){id value=values[i];[a addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[NSUserDefaults.standardUserDefaults setObject:value forKey:key];[self save];}]];}
-    [a addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil];
-}
--(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)ip{
-    [tableView deselectRowAtIndexPath:ip animated:YES];
-    if(ip.section==0&&ip.row==0)[self choose:@[@"Moderno",@"Moderno V2",@"Clásico"] values:@[@0,@1,@2] key:@"touchStyle"];
-    else if(ip.section==0&&ip.row==1)[self.navigationController pushViewController:[ControlEditor new] animated:YES];
-    else if(ip.section==0&&ip.row==2)[self choose:@[@"25%",@"50%",@"75%",@"100%"] values:@[@25,@50,@75,@100] key:@"touchOpacity"];
-    else if(ip.section==1&&ip.row==2)[self choose:@[@"Nativo",@"60 FPS",@"120 FPS"] values:@[@0,@1,@2] key:@"renderRate"];
-    else if(ip.section==1&&ip.row==3)[self choose:@[@"Desactivados",@"Suaves",@"Completos"] values:@[@0,@1,@2] key:@"shaders"];
-    else if(ip.section==2){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Tus archivos" message:@"Archivos → En mi iPhone → Reloaded iOS. Las carpetas game contienen el juego y sus partidas. touch-layout.conf guarda la distribución en el mismo formato que Android." preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:a animated:YES completion:nil];}
 }
 @end
 

@@ -11,6 +11,8 @@
 
 static NSString *Documents(void) { return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject; }
 static NSString *EngineError(void) { char text[4096]={0};gm_ios_error(text,sizeof(text));return [[NSString alloc] initWithBytes:text length:strlen(text) encoding:NSUTF8StringEncoding] ?: @"El motor se detuvo. Consultá el registro."; }
+#include "LauncherSupport.m"
+
 static EAGLContext *glContext;
 static GLuint screenFbo,screenColor;
 static AudioUnit audioUnit;
@@ -134,13 +136,17 @@ void gm_ios_haptic(void) {
 
 @interface GameController : UIViewController
 @property(nonatomic,copy)NSString *gameRoot;
-@property(nonatomic)BOOL smoke,started;
+@property(nonatomic)BOOL smoke,started,appeared;
 @property(nonatomic,strong)GameView *canvas;
 @property(nonatomic,strong)UILabel *loading;
 @property(nonatomic,strong)UIButton *menu;
 @property(nonatomic,strong)CADisplayLink *pump;
 @end
 @implementation GameController
+-(UIInterfaceOrientationMask)supportedInterfaceOrientations{return UIInterfaceOrientationMaskLandscape;}
+-(UIInterfaceOrientation)preferredInterfaceOrientationForPresentation{return UIInterfaceOrientationLandscapeRight;}
+-(BOOL)prefersStatusBarHidden{return YES;}
+-(BOOL)prefersHomeIndicatorAutoHidden{return YES;}
 -(void)viewDidLoad {
     [super viewDidLoad];self.view.backgroundColor=UIColor.blackColor;
     self.canvas=[[GameView alloc]initWithFrame:CGRectZero];[self.view addSubview:self.canvas];
@@ -155,19 +161,29 @@ void gm_ios_haptic(void) {
     [nc addObserver:self selector:@selector(pause) name:UIApplicationWillResignActiveNotification object:nil];
     [nc addObserver:self selector:@selector(resume) name:UIApplicationDidBecomeActiveNotification object:nil];
     [nc addObserver:self selector:@selector(audioInterrupted:) name:AVAudioSessionInterruptionNotification object:nil];
-    self.pump=[CADisplayLink displayLinkWithTarget:self selector:@selector(pollTouch)];[self.pump addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    UIApplication.sharedApplication.idleTimerDisabled=YES;
+    self.pump=[CADisplayLink displayLinkWithTarget:self selector:@selector(pollTouch)];
+    NSInteger mode=PrefIndex(@"renderRate",4),maximum=UIScreen.mainScreen.maximumFramesPerSecond;
+    float hz=MIN(maximum,mode<2?60:mode==2?120:maximum);
+    self.pump.preferredFrameRateRange=CAFrameRateRangeMake(hz,hz,hz);
+    [self.pump addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    UIApplication.sharedApplication.idleTimerDisabled=[NSUserDefaults.standardUserDefaults boolForKey:@"keepAwake"];
 }
 -(void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    // Keep the Android layout clear of the Dynamic Island and home indicator.
+    // Stretch uses every pixel; aspect mode keeps the controls inside the safe area.
     UIEdgeInsets safe=self.view.safeAreaInsets;
-    self.canvas.frame=UIEdgeInsetsInsetRect(self.view.bounds,UIEdgeInsetsMake(0,safe.left,MAX(8,safe.bottom),safe.right));
+    self.canvas.frame=[NSUserDefaults.standardUserDefaults boolForKey:@"stretch"]?self.view.bounds:UIEdgeInsetsInsetRect(self.view.bounds,UIEdgeInsetsMake(0,safe.left,MAX(8,safe.bottom),safe.right));
     self.menu.frame=CGRectMake(CGRectGetMidX(self.view.bounds)-22,self.view.bounds.size.height-31,44,24);
-    self.loading.frame=CGRectMake(CGRectGetMidX(self.view.bounds)-210,CGRectGetMidY(self.view.bounds)-45,420,90);
+    CGFloat loadingWidth=MIN(420,self.view.bounds.size.width-32);self.loading.frame=CGRectMake(CGRectGetMidX(self.view.bounds)-loadingWidth/2,CGRectGetMidY(self.view.bounds)-45,loadingWidth,90);
+    [self startEngineIfReady];
 }
 -(void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];if(self.started)return;self.started=YES;
+    [super viewDidAppear:animated];self.appeared=YES;RequestOrientation(self,UIInterfaceOrientationMaskLandscape);[self.view layoutIfNeeded];[self startEngineIfReady];
+}
+-(void)startEngineIfReady {
+    if(self.started||!self.appeared||!self.view.window||self.view.bounds.size.width<=self.view.bounds.size.height)return;
+    self.started=YES;
+    if(self.smoke){NSAssert(CGRectEqualToRect(self.canvas.frame,self.view.bounds),@"Rellenar no ocupa la pantalla");NSLog(@"IOS_PRESENTATION_OK: landscape, full-screen canvas, display link %.0f Hz",self.pump.preferredFrameRateRange.preferred);}
     GameView *canvas=self.canvas;NSString *root=self.gameRoot;
     uint32_t w=canvas.bounds.size.width*canvas.contentScaleFactor,h=canvas.bounds.size.height*canvas.contentScaleFactor;
     NSString *font=[NSBundle.mainBundle pathForResource:@"soundfont" ofType:@"sf2"];
@@ -178,7 +194,7 @@ void gm_ios_haptic(void) {
         NSString *message=result==0?@"Sesión finalizada":EngineError();
         if(self.smoke && result!=0){[ message writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];}
         dispatch_async(dispatch_get_main_queue(),^{
-            [self.pump invalidate];self.pump=nil;[self.canvas resignFirstResponder];
+            [self.pump invalidate];self.pump=nil;[self.canvas resignFirstResponder];UIApplication.sharedApplication.idleTimerDisabled=NO;
             [self dismissViewControllerAnimated:YES completion:^{if(self.smoke && result==0){[UIApplication.sharedApplication.keyWindow.rootViewController performSelector:@selector(testSettings)];}if(result!=0){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"No se pudo iniciar" message:message preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController:a animated:YES completion:nil];}}];
         });
     }}];engine.name=@"Reloaded Engine";engine.stackSize=8*1024*1024;[engine start];
@@ -219,78 +235,7 @@ void gm_ios_haptic(void) {
 
 #include "Settings.m"
 
-@interface Launcher : UIViewController<UIDocumentPickerDelegate>
-@property(nonatomic,strong)UIStackView *stack;
-@property(nonatomic,strong)UILabel *status;
-@property(nonatomic,strong)UIButton *playButton;
-@property(nonatomic,strong)UIButton *importButton;
-@property(nonatomic)BOOL importing;
-@end
-@implementation Launcher
--(NSString *)gameRoot {NSString *folder=[NSUserDefaults.standardUserDefaults stringForKey:@"gameFolder"];return folder?[Documents() stringByAppendingPathComponent:folder]:nil;}
--(UIButton *)button:(NSString *)title action:(SEL)action {
-    UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem];[b setTitle:title forState:UIControlStateNormal];b.tintColor=UIColor.whiteColor;b.titleLabel.font=[UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];b.backgroundColor=[UIColor colorWithRed:.12 green:.25 blue:.43 alpha:1];b.layer.cornerRadius=12;[b.heightAnchor constraintEqualToConstant:44].active=YES;[b addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];[self.stack addArrangedSubview:b];return b;
-}
--(void)viewDidLoad {
-    [super viewDidLoad];self.view.backgroundColor=[UIColor colorWithRed:.035 green:.055 blue:.1 alpha:1];
-    self.stack=[[UIStackView alloc]init];self.stack.axis=UILayoutConstraintAxisVertical;self.stack.spacing=10;self.stack.translatesAutoresizingMaskIntoConstraints=NO;[self.view addSubview:self.stack];
-    [NSLayoutConstraint activateConstraints:@[[self.stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],[self.stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],[self.stack.widthAnchor constraintEqualToConstant:480]]];
-    UILabel *title=[[UILabel alloc]init];title.text=@"RELOADED  /  iOS";title.font=[UIFont systemFontOfSize:30 weight:UIFontWeightBlack];title.textColor=UIColor.whiteColor;title.textAlignment=NSTextAlignmentCenter;[self.stack addArrangedSubview:title];
-    self.status=[[UILabel alloc]init];self.status.text=@"Controles Android 0.3.9/V22 · Importá el ZIP original del juego";self.status.textColor=[UIColor colorWithWhite:.72 alpha:1];self.status.font=[UIFont systemFontOfSize:14];self.status.textAlignment=NSTextAlignmentCenter;self.status.numberOfLines=3;[self.stack addArrangedSubview:self.status];
-    self.playButton=[self button:@"Jugar" action:@selector(play)];self.importButton=[self button:@"Importar ZIP del juego" action:@selector(importGame)];
-    [self button:@"Ajustes y controles" action:@selector(settings)];
-    UIStackView *row=[[UIStackView alloc]init];row.axis=UILayoutConstraintAxisHorizontal;row.spacing=12;row.distribution=UIStackViewDistributionFillEqually;
-    UIButton *logs=[UIButton buttonWithType:UIButtonTypeSystem];[logs setTitle:@"Compartir registro" forState:UIControlStateNormal];[logs addTarget:self action:@selector(logs) forControlEvents:UIControlEventTouchUpInside];[row addArrangedSubview:logs];
-    UIButton *saves=[UIButton buttonWithType:UIButtonTypeSystem];[saves setTitle:@"Mis archivos y partidas" forState:UIControlStateNormal];[saves addTarget:self action:@selector(saves) forControlEvents:UIControlEventTouchUpInside];[row addArrangedSubview:saves];[self.stack addArrangedSubview:row];
-    UILabel *credits=[[UILabel alloc]init];credits.text=@"Motor OpenGMK · Base Android de Klisee · Adaptación experimental para iOS\nEl juego original de F3R se importa por separado.";credits.font=[UIFont systemFontOfSize:10];credits.textColor=[UIColor colorWithWhite:.5 alpha:1];credits.numberOfLines=2;credits.textAlignment=NSTextAlignmentCenter;[self.stack addArrangedSubview:credits];
-}
--(void)viewWillAppear:(BOOL)animated{[super viewWillAppear:animated];NSString *root=[self gameRoot];self.playButton.enabled=root && gm_ios_has_game(root.fileSystemRepresentation);self.playButton.alpha=self.playButton.enabled?1:.4;}
--(void)viewDidAppear:(BOOL)animated{[super viewDidAppear:animated];static BOOL tested=NO;if(!tested && [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-test"]){tested=YES;GameController *game=[GameController new];game.smoke=YES;game.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:game animated:NO completion:nil];}}
--(void)testSettings {
-    UINavigationController *nav=[[UINavigationController alloc]initWithRootViewController:[[ReloadedSettings alloc]initWithStyle:UITableViewStyleInsetGrouped]];
-    nav.modalPresentationStyle=UIModalPresentationFullScreen;
-    [self presentViewController:nav animated:NO completion:^{
-        ControlEditor *editor=[ControlEditor new];[nav pushViewController:editor animated:NO];[editor.view layoutIfNeeded];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
-            @try {
-                NSAssert(editor.controls.count>20,@"No se cargó la vista de controles");
-                UIButton *z=nil;for(UIButton *b in editor.preview.subviews)if([b.accessibilityIdentifier isEqual:@"z"]){z=b;break;}
-                NSAssert(z!=nil,@"Falta Z en el editor");
-                [editor select:z];z.center=CGPointMake(editor.preview.bounds.size.width*.80,editor.preview.bounds.size.height*.76);[editor store:z scale:1.25];[editor reload];
-                NSDictionary *found=nil;for(NSDictionary *c in editor.controls)if([c[@"name"] isEqual:@"z"]){found=c;break;}
-                NSAssert(fabs([found[@"x"] doubleValue]-.80)<.01,@"No se guardó la posición");
-                [editor.entries removeObjectForKey:@"world z"];[editor persist];[editor reload];
-                NSLog(@"IOS_SETTINGS_OK: editor shares Android layout, move/scale persisted and reloaded");
-                [@"READY" writeToFile:[Documents() stringByAppendingPathComponent:@"settings-ready.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{[@"PASS" writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];});
-            } @catch(NSException *e) { [e.description writeToFile:[Documents() stringByAppendingPathComponent:@"smoke-result.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
-        });
-    }];
-}
--(void)play{GameController *game=[GameController new];game.gameRoot=[self gameRoot];game.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:game animated:YES completion:nil];}
--(void)settings{UINavigationController *nav=[[UINavigationController alloc]initWithRootViewController:[[ReloadedSettings alloc]initWithStyle:UITableViewStyleInsetGrouped]];nav.modalPresentationStyle=UIModalPresentationFullScreen;[self presentViewController:nav animated:YES completion:nil];}
--(void)importGame{if(self.importing)return;UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]initForOpeningContentTypes:@[UTTypeZIP] asCopy:NO];picker.delegate=self;[self presentViewController:picker animated:YES completion:nil];}
--(void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    NSURL *url=urls.firstObject;if(!url)return;BOOL access=[url startAccessingSecurityScopedResource];
-    self.importing=YES;self.playButton.enabled=NO;self.importButton.enabled=NO;self.status.text=@"Importando archivos… Mantené la app abierta.";
-    NSString *folder=[@"game-" stringByAppendingString:NSUUID.UUID.UUIDString];NSString *destination=[Documents()stringByAppendingPathComponent:folder];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{@autoreleasepool{
-        __block int result=-1;__block NSString *message=nil;NSError *coordinationError=nil;
-        NSFileCoordinator *coordinator=[[NSFileCoordinator alloc]init];
-        [coordinator coordinateReadingItemAtURL:url options:0 error:&coordinationError byAccessor:^(NSURL *readURL){result=gm_ios_import(readURL.fileSystemRepresentation,destination.fileSystemRepresentation);if(result!=0)message=EngineError();}];
-        if(access)[url stopAccessingSecurityScopedResource];
-        if(coordinationError)message=coordinationError.localizedDescription;
-        if(result==0)[NSUserDefaults.standardUserDefaults setObject:folder forKey:@"gameFolder"];
-        dispatch_async(dispatch_get_main_queue(),^{self.importing=NO;self.importButton.enabled=YES;self.playButton.enabled=[self gameRoot]!=nil;self.playButton.alpha=self.playButton.enabled?1:.4;self.status.text=result==0?@"Juego importado. Tocá Jugar.":message;});
-    }});
-}
--(void)logs {
-    NSMutableArray *files=[NSMutableArray new];
-    for(NSString *name in @[@"emulator-previous.log",@"emulator.log",@"last-stage.txt"]){NSString *p=[Documents() stringByAppendingPathComponent:name];if([NSFileManager.defaultManager fileExistsAtPath:p])[files addObject:[NSURL fileURLWithPath:p]];}
-    UIActivityViewController *sheet=[[UIActivityViewController alloc]initWithActivityItems:files applicationActivities:nil];sheet.popoverPresentationController.sourceView=self.view;sheet.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(self.view.bounds),CGRectGetMidY(self.view.bounds),1,1);[self presentViewController:sheet animated:YES completion:nil];
-}
--(void)saves {UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Archivos y partidas" message:@"Abrí Archivos → En mi iPhone → Reloaded iOS. Cada carpeta game contiene una importación y sus partidas. Podés copiar tus partidas desde allí. Importar otro ZIP conserva las carpetas anteriores." preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:a animated:YES completion:nil];}
-@end
+#include "Launcher.m"
 
 @interface AppDelegate : UIResponder<UIApplicationDelegate>
 @property(nonatomic,strong)UIWindow *window;
@@ -298,11 +243,11 @@ void gm_ios_haptic(void) {
 @implementation AppDelegate
 -(void)applicationDidReceiveMemoryWarning:(UIApplication *)application {NSLog(@"[memory] iOS avisó de presión de memoria");}
 -(BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    audioLock=[NSLock new];
+    audioLock=[NSLock new];RegisterPreferences();
     NSString *log=[Documents() stringByAppendingPathComponent:@"emulator.log"];NSString *old=[Documents() stringByAppendingPathComponent:@"emulator-previous.log"];
     [NSFileManager.defaultManager removeItemAtPath:old error:nil];[NSFileManager.defaultManager moveItemAtPath:log toPath:old error:nil];
     freopen(log.fileSystemRepresentation,"a",stdout);freopen(log.fileSystemRepresentation,"a",stderr);setbuf(stdout,NULL);setbuf(stderr,NULL);
-    NSLog(@"Reloaded iOS 0.2.0 — controles Android 0.3.9/V22");
+    NSLog(@"Reloaded iOS 0.3.0 — controles Android 0.3.9/V22");
     gm_ios_configure(Documents().fileSystemRepresentation);
     NSString *source=[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Controls"];
     for(NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:source error:nil]){
@@ -311,7 +256,7 @@ void gm_ios_haptic(void) {
     }
     NSDictionary *defaults=@{@"touch.conf":@"style=classic\nmove=joystick\nopacity=1\nscale=1\n",@"touch-appearance.conf":@"touch-appearance-v1\nstyle=modern_v2\ntint=original\nanimations=1\nhaptics=1\n",@"shaders.txt":@"off\n135\n55\n",@"video.conf":@"scaling=aspect\nrender=native\nshow_fps=0\n"};
     for(NSString *name in defaults){NSString *path=[Documents() stringByAppendingPathComponent:name];if(![NSFileManager.defaultManager fileExistsAtPath:path])[(NSString *)defaults[name] writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];}
-    self.window=[[UIWindow alloc]initWithFrame:UIScreen.mainScreen.bounds];self.window.rootViewController=[Launcher new];[self.window makeKeyAndVisible];return YES;
+    self.window=[[UIWindow alloc]initWithFrame:UIScreen.mainScreen.bounds];self.window.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;self.window.rootViewController=[Launcher new];[self.window makeKeyAndVisible];return YES;
 }
 @end
 int main(int argc,char *argv[]){@autoreleasepool{return UIApplicationMain(argc,argv,nil,NSStringFromClass(AppDelegate.class));}}

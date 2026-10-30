@@ -26,6 +26,7 @@ xcrun --sdk "$SDK" clang -target "$CLANG_TARGET" -isysroot "$SDKROOT" -fobjc-arc
 cp "$ROOT/ios/Info.plist" "$APP/Info.plist"
 xcrun --sdk macosx swift -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$ROOT/ios/icon.swift" "$APP"
 cp "$ROOT/android/app/src/main/assets/soundfont.sf2" "$APP/soundfont.sf2"
+cp "$ROOT/android/app/src/main/res/font/google_sans_flex.ttf" "$APP/google_sans_flex.ttf"
 mkdir -p "$APP/Controls"
 cp "$ROOT/android/app/src/main/assets/"*.png "$APP/Controls/"
 cp "$ROOT/android/app/src/main/assets/"*_catalog.csv "$APP/Controls/"
@@ -33,8 +34,8 @@ cp "$ROOT/LICENSE" "$APP/LICENSE.txt"
 /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms array" "$APP/Info.plist"
 if [[ $MODE == device ]]; then
  /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms:0 string iPhoneOS" "$APP/Info.plist"
- (cd "$OUT" && ditto -c -k --keepParent Payload Reloaded-iOS-0.2.0-unsigned.ipa)
- shasum -a 256 "$OUT/Reloaded-iOS-0.2.0-unsigned.ipa" > "$OUT/SHA256.txt"
+ (cd "$OUT" && ditto -c -k --keepParent Payload Reloaded-iOS-0.3.0-unsigned.ipa)
+ shasum -a 256 "$OUT/Reloaded-iOS-0.3.0-unsigned.ipa" > "$OUT/SHA256.txt"
 else
  /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms:0 string iPhoneSimulator" "$APP/Info.plist"
  codesign --force --sign - "$APP"

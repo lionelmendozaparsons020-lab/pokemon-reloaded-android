@@ -4,6 +4,7 @@
 #include <stddef.h>
 int gm_ios_run(void *view,uint32_t w,uint32_t h,const char *root,const char *font,bool smoke);
 int gm_ios_import(const char *zip,const char *destination);
+int gm_ios_saves(const char *root,const char *file,uint32_t slot,bool importing);
 bool gm_ios_has_game(const char *root);
 void gm_ios_error(char *out,size_t size);
 void gm_ios_key(uint32_t code,bool down);

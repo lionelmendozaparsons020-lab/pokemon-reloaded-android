@@ -2,6 +2,7 @@
 use std::{ffi::{CStr, c_char, c_void}, sync::{Mutex, MutexGuard, Condvar, atomic::{AtomicBool, Ordering}}, path::{Path, PathBuf}};
 use ramen::{input::Key, platform::ios::{self as platform, InputEvent}};
 mod archive { include!("ios/archive.rs"); }
+mod saves { include!("ios/saves.rs"); }
 mod touch { include!("ios/touch.rs"); }
 mod settings { include!("ios/settings.rs"); }
 mod fixture { include!("ios/fixture.rs"); }
@@ -23,6 +24,8 @@ pub unsafe extern "C" fn gm_ios_configure(documents: *const c_char) {
 static SUN: Mutex<Option<(f64,f64)>> = Mutex::new(None);
 pub(crate) fn sun_settings() -> Option<(f64,f64)> { *SUN.lock().unwrap() }
 fn load_settings() {
+    let mods = std::fs::read_to_string(storage_path("mods.conf")).unwrap_or_default();
+    crate::touch_controls::set_official_f3_enabled(mods.lines().any(|line| line.trim() == "official_f3=1"));
     let config=std::fs::read_to_string(storage_path("shaders.txt")).unwrap_or_default();
     let mut lines=config.lines();
     let enabled=lines.next().unwrap_or("off")=="high";
@@ -103,6 +106,17 @@ pub unsafe extern "C" fn gm_ios_import(zip: *const c_char, destination: *const c
 pub unsafe extern "C" fn gm_ios_has_game(root: *const c_char) -> bool {
     path(root).ok().and_then(|p| archive::find_exe(&p).ok()).is_some()
 }
+#[no_mangle]
+pub unsafe extern "C" fn gm_ios_saves(root: *const c_char, file: *const c_char, slot: u32, importing: bool) -> i32 {
+    if RUNNING.load(Ordering::Acquire) { return error("Sal del juego antes de gestionar las partidas"); }
+    match std::panic::catch_unwind(|| -> Result<(), String> {
+        let exe = archive::find_exe(&path(root)?)?;
+        let data = exe.parent().ok_or("Carpeta inválida")?.join("data");
+        if importing { saves::import(&data, &path(file)?, slot)?; }
+        else { saves::export(&data, &path(file)?, slot)?; }
+        Ok(())
+    }) { Ok(Ok(())) => 0, Ok(Err(e)) => error(e), Err(_) => error("No se pudo procesar el ZIP de partidas") }
+}
 fn key(code: u32) -> Option<Key> {
     use Key::*;
     Some(match code {
@@ -152,6 +166,7 @@ pub unsafe extern "C" fn gm_ios_run(view: *mut c_void, w: u32, h: u32, root: *co
         stage("Preparando motor y controles");
         if smoke { return smoke_test(w,h); }
         let root=path(root)?; let exe=archive::find_exe(&root)?;
+        saves::recover(&exe.parent().ok_or("Carpeta inválida")?.join("data"))?;
         *GAME_DIR.lock().unwrap()=exe.parent().map(Path::to_path_buf);
         std::env::set_current_dir(exe.parent().ok_or("Carpeta del juego inválida")?).map_err(|e|e.to_string())?;
         if let Ok(sf)=path(font) { std::env::set_var("OPENGMK_SOUNDFONT",sf); }
@@ -194,7 +209,7 @@ pub(crate) fn preview_context() -> Option<u8> {let n=PREVIEW.load(Ordering::Rela
 pub unsafe extern "C" fn gm_ios_layout_json(context: u8,w:f32,h:f32,out:*mut c_char,size:usize) {
     if RUNNING.load(Ordering::Acquire)||out.is_null()||size==0||w<=0.0||h<=0.0{return;}
     load_settings();PREVIEW.store(context,Ordering::Relaxed);
-    let (x,y,vw,vh)=crate::render::display_rect(w as u32,h as u32,320,240,crate::render::Scaling::Aspect(-1.0));
+    let (x,y,vw,vh)=crate::render::display_rect(w as u32,h as u32,320,240,crate::render::pinned_scaling().unwrap_or(crate::render::Scaling::Aspect(-1.0)));
     crate::touch_controls::set_viewport(x as f32/w,y as f32/h,vw as f32/w,vh as f32/h);
     use crate::touch_controls as tc;
     let mut rows=Vec::new();

@@ -8,7 +8,12 @@ xcrun simctl install "$DEVICE" "$ROOT/ios/out/simulator/Payload/Reloaded.app"
 xcrun simctl launch "$DEVICE" com.lixarx.reloaded.ios --smoke-test
 CONTAINER=$(xcrun simctl get_app_container "$DEVICE" com.lixarx.reloaded.ios data)
 mkdir -p "$ROOT/ios/out/verification"
-for i in $(seq 1 120); do
+for i in $(seq 1 180); do
+  for stage in launcher fps options saves; do
+    if [[ -f "$CONTAINER/Documents/$stage-ready.txt" && ! -f "$ROOT/ios/out/verification/$stage.png" ]]; then
+      xcrun simctl io "$DEVICE" screenshot "$ROOT/ios/out/verification/$stage.png"
+    fi
+  done
   if [[ ! -f "$ROOT/ios/out/verification/simulator.png" ]] && grep -q IOS_STARTUP_OK "$CONTAINER/Documents/emulator.log" 2>/dev/null; then
     xcrun simctl io "$DEVICE" screenshot "$ROOT/ios/out/verification/simulator.png"
   fi
@@ -25,3 +30,8 @@ cp "$CONTAINER/Documents/emulator.log" "$ROOT/ios/out/verification/" || true
 cp "$CONTAINER/Documents/smoke-result.txt" "$ROOT/ios/out/verification/" || true
 cat "$ROOT/ios/out/verification/emulator.log" || true
 test "$(cat "$ROOT/ios/out/verification/smoke-result.txt")" = PASS
+
+grep -q IOS_LAUNCHER_OK "$ROOT/ios/out/verification/emulator.log"
+grep -q IOS_PRESENTATION_OK "$ROOT/ios/out/verification/emulator.log"
+grep -q IOS_SETTINGS_OK "$ROOT/ios/out/verification/emulator.log"
+grep -q IOS_SAVES_OK "$ROOT/ios/out/verification/emulator.log"
