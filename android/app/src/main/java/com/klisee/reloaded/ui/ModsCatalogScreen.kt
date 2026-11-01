@@ -49,9 +49,8 @@ private data class ModsCatalogEntry(
 )
 
 
-// The game stores species names in index order in data/text/es/txt_pkmn.dll.
-// These indices, NOT the National Dex numbers, are what native RADPK expects.
-// This light substitution decoder reads the user's own installed game data.
+// Game data stores Pokémon names by INTERNAL species ID, not National Dex index.
+// Decode the installed game data rather than guessing ID offsets for event Pokémon.
 private val gamePokemonCipher = mapOf(
     'v' to 'B',
     '\\' to 'u',
@@ -82,7 +81,47 @@ private val gamePokemonCipher = mapOf(
     '!' to 'f',
     'j' to 'K',
     'F' to 'k',
-    '
+    '$' to 'P',
+    'I' to 'g',
+    'R' to 'R',
+    '3' to 'c',
+    'Z' to 'w',
+    't' to 'F',
+    '>' to 'E',
+    '@' to 'A',
+    '(' to 'N',
+    'C' to 'x',
+    'H' to 'J',
+    '8' to 'Z',
+    'U' to 'G',
+    'V' to 'O',
+    '/' to 'D',
+    ':' to 'T',
+    's' to 'L',
+    'y' to 'H',
+    'k' to 'U',
+    'E' to 'Y',
+    'm' to 'Q',
+    '[' to 'X',
+    '^' to 'j',
+    '4' to ' ',
+    'x' to '-',
+    'w' to '2',
+    '\'' to '\'',
+    'l' to '?',
+)
+
+private fun gamePokemonEntries(gameRoot: File): List<ModsCatalogEntry> {
+    val names = File(gameRoot, "data/text/es/txt_pkmn.dll")
+    if (!names.isFile) return emptyList()
+    return names.bufferedReader(Charsets.ISO_8859_1).useLines { lines ->
+        lines.take(1025).mapIndexedNotNull { index, raw ->
+            if (raw.isBlank() || raw.length > 120) null
+            else ModsCatalogEntry(index + 1, raw.map { c -> gamePokemonCipher[c] ?: c }.joinToString(""))
+        }.toList()
+    }
+}
+// Game-specific item indices are bundled from the 1.9.2.2 item list;
 // they must never be replaced with IDs from FireRed, Emerald or PokéAPI.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -141,7 +180,7 @@ fun ModsCatalogScreen(
         ) {
             Text(
                 if (isPokemon)
-                    "Índices INTERNOS reales de Pokémon Reloaded, leídos del juego que instalaste. No son los de la Pokédex Nacional: Cosmog es el ID 980, no 789. Solo el modo Mods permite RADPK."
+                    "IDs internos de Pokémon Reloaded obtenidos directamente de sus archivos instalados. Ejemplo: Cosmog es #980 (no #789). Seleccioná un Pokémon para copiar su ID al generador."
                 else
                     "821 objetos de Pokémon Reloaded 1.9.2.2 con sus nombres e IDs. RADITEM solo admite objetos comunes y Poké Balls; no todos los objetos del catálogo pueden generarse.",
                 style = MaterialTheme.typography.bodySmall,
@@ -168,10 +207,8 @@ fun ModsCatalogScreen(
                 }
             }
             if (isPokemon && entries.isEmpty()) {
-                Text(
-                    "No encuentro los nombres del juego. Importá y prepará Pokémon Reloaded antes de usar el catálogo de Pokémon.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Text("Primero importá el juego: no encuentro su lista de Pokémon.",
+                    style = MaterialTheme.typography.bodyMedium)
             }
             Text(
                 "${filtered.size} resultado(s) · Tocá «Usar ID» para llevarlo al generador.",
@@ -186,166 +223,6 @@ fun ModsCatalogScreen(
                         supportingContent = {
                             Text(
                                 if (isPokemon) "ID interno del juego · RADPK / RADSH"
-                                else "Índice de objetos de Pokémon Reloaded 1.9.2.2"
-                            )
-                        },
-                        trailingContent = {
-                            TextButton(onClick = { onSelect(entry.id) }) {
-                                Text("Usar ID")
-                            }
-                        },
-                    )
-                    HorizontalDivider()
-                }
-            }
-        }
-    }
-}
- to 'P',
-    'I' to 'g',
-    'R' to 'R',
-    '3' to 'c',
-    'Z' to 'w',
-    't' to 'F',
-    '>' to 'E',
-    '@' to 'A',
-    '(' to 'N',
-    'C' to 'x',
-    'H' to 'J',
-    '8' to 'Z',
-    'U' to 'G',
-    'V' to 'O',
-    '/' to 'D',
-    ':' to 'T',
-    's' to 'L',
-    'y' to 'H',
-    'k' to 'U',
-    'E' to 'Y',
-    'm' to 'Q',
-    '[' to 'X',
-    '^' to 'j',
-    '4' to ' ',
-    'x' to '-',
-    'w' to '2',
-    '\'' to '\'',
-    'l' to '?',
-)
-
-private fun gamePokemonEntries(gameRoot: File): List<ModsCatalogEntry> {
-    val names = File(gameRoot, "data/text/es/txt_pkmn.dll")
-    if (!names.isFile) return emptyList()
-    return names.bufferedReader(Charsets.ISO_8859_1).useLines { lines ->
-        lines.take(1025).mapIndexedNotNull { index, raw ->
-            if (raw.isBlank() || raw.length > 120) null
-            else ModsCatalogEntry(index + 1, raw.map { c -> gamePokemonCipher[c] ?: c }.joinToString(""))
-        }.toList()
-    }
-}
-// Game-specific item indices are bundled from the 1.9.2.2 item list;
-// they must never be replaced with IDs from FireRed, Emerald or PokéAPI.
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ModsCatalogScreen(
-    type: ModsCatalogType,
-    onBack: () -> Unit,
-    onSelect: (Int) -> Unit,
-) {
-    val context = LocalContext.current
-    val entries = remember(type) {
-        if (type == ModsCatalogType.POKEMON) {
-            runCatching {
-                context.assets.open("pokemon_catalog.csv").bufferedReader().useLines { lines ->
-                    lines.mapNotNull { line ->
-                        val parts = line.split('|', limit = 3)
-                        val number = parts.firstOrNull()?.toIntOrNull()
-                        if (parts.size < 3 || number == null || number !in 1..1025) null
-                        else ModsCatalogEntry(number, parts[1], parts[2])
-                    }.toList()
-                }
-            }.getOrDefault(emptyList())
-        } else {
-            runCatching {
-                context.assets.open("items_reloaded_catalog.csv").bufferedReader().useLines { lines ->
-                    lines.mapNotNull { line ->
-                        val parts = line.split('|', limit = 2)
-                        val number = parts.firstOrNull()?.toIntOrNull()
-                        if (parts.size != 2 || number == null || number !in 1..821) null
-                        else ModsCatalogEntry(number, parts[1])
-                    }.toList()
-                }
-            }.getOrDefault(emptyList())
-        }
-    }
-    var query by remember(type) { mutableStateOf("") }
-    var ballsOnly by remember(type) { mutableStateOf(false) }
-    val filtered = remember(entries, query, ballsOnly, type) {
-        val value = searchable(query.trim())
-        entries.filter { entry ->
-            (!ballsOnly || entry.id in 1..14) &&
-                (value.isEmpty() || entry.id.toString().contains(value) ||
-                    searchable(entry.label).contains(value) ||
-                    searchable(entry.alternative).contains(value))
-        }
-    }
-    val isPokemon = type == ModsCatalogType.POKEMON
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (isPokemon) "IDs de Pokémon" else "IDs de objetos") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
-                    }
-                },
-            )
-        },
-        contentWindowInsets = WindowInsets(0.dp),
-    ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                if (isPokemon)
-                    "1.025 especies · Números de Pokédex Nacional. Pokémon Reloaded puede usar índices internos distintos, especialmente para formas especiales; comprobá el resultado antes de guardar."
-                else
-                    "821 objetos de Pokémon Reloaded 1.9.2.2 con sus nombres e IDs. RADITEM solo admite objetos comunes y Poké Balls; no todos los objetos del catálogo pueden generarse.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it.take(50) },
-                label = { Text(if (isPokemon) "Buscar Pokémon por nombre o número" else "Buscar objeto por nombre o ID") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (!isPokemon) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = ballsOnly,
-                        onClick = { ballsOnly = !ballsOnly },
-                        label = { Text("Poké Balls") },
-                    )
-                    FilterChip(
-                        selected = !ballsOnly,
-                        onClick = { ballsOnly = false },
-                        label = { Text("Todos los IDs") },
-                    )
-                }
-            }
-            Text(
-                "${filtered.size} resultado(s) · Tocá «Usar ID» para llevarlo al generador.",
-                style = MaterialTheme.typography.labelMedium,
-            )
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                items(filtered, key = { it.id }) { entry ->
-                    ListItem(
-                        headlineContent = {
-                            Text("#${entry.id} · ${entry.label}")
-                        },
-                        supportingContent = {
-                            Text(
-                                if (isPokemon) "Pokédex Nacional · Referencia"
                                 else "Índice de objetos de Pokémon Reloaded 1.9.2.2"
                             )
                         },
