@@ -300,7 +300,7 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
             )
             Text("Añadir Pokémon · Encuentro", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Elegí especie y nivel. Modo Mods prepara un encuentro salvaje para capturarlo " +
+                "Elegí el ID INTERNO de la especie (buscá por nombre en «IDs Pokémon») y el nivel. Modo Mods prepara un encuentro para capturarlo " +
                     "con las funciones originales del juego, sin editar directamente tu equipo o tus cajas.",
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -320,7 +320,7 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
             }
-            Text("Ejemplos: Bulbasaur 1 · Charizard 6 · Pikachu 25 · Eevee 133 · Mewtwo 150 · Lucario 448.",
+            Text("Ejemplos: Pikachu ID 25 · Mewtwo ID 150 · Cosmog ID 980. El número puede diferir del de la Pokédex Nacional.",
                 style = MaterialTheme.typography.bodySmall)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -337,7 +337,9 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
             val pokemonCode = (if (pokemonShiny) "RADSH" else "RADPK") + pokemonId + "X" + pokemonLevel
             Button(
                 enabled = isolatedMode && (pokemonId.toIntOrNull() ?: 0) in 1..1025 &&
-                    (pokemonLevel.toIntOrNull() ?: 0) in 1..100 && pokemonCode.length <= 13,
+                    (pokemonLevel.toIntOrNull() ?: 0) in 1..100 &&
+                    (!pokemonShiny || (pokemonId.toIntOrNull() ?: 1026) <= 1000) &&
+                    pokemonCode.length <= 13,
                 onClick = {
                     copyCheat(pokemonCode, "Copiado: $pokemonCode. Escribilo en F3 al explorar.")
                 },
@@ -346,7 +348,8 @@ fun ModsCheatsScreen(repo: GameRepository, onBack: () -> Unit) {
             Text(
                 "Requiere Modo Mods y F3 activados. Al explorar, introducí el código en F3 " +
                     "para iniciar un encuentro y capturarlo de forma normal. " +
-                    "Solo funciona con especies válidas. No guardes si aparece una anomalía.",
+                    "Formato: RADPK980X10 para Cosmog de nivel 10. Usá la letra X, sin espacios. " +
+                "No guardes si aparece una anomalía.",
                 style = MaterialTheme.typography.bodySmall,
             )
 
