@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso.pressBack
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -44,6 +43,11 @@ class SettingsUiTest {
     private fun openSettings() {
         compose.onNodeWithContentDescription("Ajustes").performClick()
         compose.onNodeWithText("Cambiar tema").assertIsDisplayed()
+    }
+
+    private fun pressBack() {
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
     }
 
     private fun select(label: String) { compose.onNodeWithText(label).performScrollTo().performClick() }
@@ -118,8 +122,8 @@ class SettingsUiTest {
             compose.onNodeWithText("Cambiar tema").assertExists()
         }
         select("Idioma")
-        compose.onNodeWithText("Español").assertIsSelected()
-        compose.onNodeWithText("Cerrar").performClick()
+        compose.onNode(hasText("Español") and hasAnyAncestor(isDialog())).assertIsSelected()
+        compose.onNode(hasText("Cerrar") and hasAnyAncestor(isDialog())).performClick()
         select("Borrar el juego")
         compose.onNodeWithText("Cancelar").performClick()
         compose.runOnIdle { assertTrue(GameRepository(context).status() is GameRepository.Status.Ready) }

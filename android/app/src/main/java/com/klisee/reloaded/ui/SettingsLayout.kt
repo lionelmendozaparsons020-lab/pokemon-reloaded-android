@@ -40,6 +40,7 @@ fun SettingsPage(
     Box(Modifier.fillMaxSize().background(background)) {
         Scaffold(
             containerColor = Color.Transparent,
+            contentColor = colors.onSurface,
             topBar = {
                 CenterAlignedTopAppBar(
                     title = { Text(title, style = MaterialTheme.typography.titleLarge) },
@@ -75,6 +76,7 @@ fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope
         modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.97f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) { Column(content = content) }
 }
 

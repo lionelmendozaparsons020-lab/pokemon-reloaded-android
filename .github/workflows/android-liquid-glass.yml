@@ -132,6 +132,14 @@ jobs:
           rustup target add --toolchain 1.99.0 x86_64-linux-android
           cargo +1.99.0 install cargo-ndk --version 3.5.4 --locked
           cargo +1.99.0 ndk -t x86_64 --platform 29 build -p gm8emulator --lib --release --locked
+      - name: Preserve compiled UI engine
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/OpenGMK/target
+          key: glass-ui-x86-rust199-${{ hashFiles('src/OpenGMK/Cargo.lock', 'src/OpenGMK/gm8emulator/src/**/*.rs', 'vendor/**/*.rs') }}
       - name: Compile instrumentation tests
         working-directory: android
         run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest -PcontrolsBuild=true -PtargetAbi=x86_64
