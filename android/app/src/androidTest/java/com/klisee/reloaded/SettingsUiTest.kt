@@ -1,7 +1,8 @@
 package com.klisee.reloaded
 
 import android.content.Context
-import android.graphics.Bitmap
+import android.accessibilityservice.AccessibilityService
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
@@ -46,20 +47,30 @@ class SettingsUiTest {
     }
 
     private fun pressBack() {
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-        compose.waitForIdle()
+        // A raw KEYCODE_BACK is not the system back gesture on API 35+. Wait for the
+        // accessibility back action to complete before looking for the returning screen.
+        assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
+            .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
+        try {
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Cambiar tema").fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (error: Throwable) {
+            screenshot("failure-back")
+            compose.onRoot().printToLog("BackNavigation")
+            throw error
+        }
     }
 
     private fun select(label: String) { compose.onNodeWithText(label).performScrollTo().performClick() }
 
     private fun screenshot(name: String) {
         compose.waitForIdle()
-        val file = File(context.getExternalFilesDir(null), "screenshots/$name.png")
-        file.parentFile!!.mkdirs()
-        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-        checkNotNull(bitmap)
-        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        bitmap.recycle()
+        // Shell-owned screenshots survive the test runner uninstalling its fixture app.
+        val output = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
+            "screencap -p /sdcard/Download/reloaded-ui/$name.png",
+        )
+        ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
     }
 
     @Test fun themeAppliesAndSurvivesRelaunch() {
