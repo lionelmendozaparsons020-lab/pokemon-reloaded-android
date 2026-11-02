@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -43,14 +44,14 @@ import com.klisee.reloaded.installUpdate
 import kotlinx.coroutines.launch
 
 /** Screens reached from a tab rather than being tabs themselves. */
-private enum class Pushed { About, Controls, Discord, TouchSettings, Fps, TouchLayout, MySaves, Mods }
+private enum class Pushed { About, Controls, Discord, TouchSettings, Fps, TouchLayout, MySaves, Mods, Theme }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun App(repo: GameRepository, prefs: Preferences) {
     var onboarded by remember { mutableStateOf(prefs.onboardingDone) }
-    var tab by remember { mutableStateOf(Tab.Home) }
-    var pushed by remember { mutableStateOf<Pushed?>(null) }
+    var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    var pushed by rememberSaveable { mutableStateOf<Pushed?>(null) }
     // Bumped whenever a tab comes into view, so the pages re-read the game's state. Without it,
     // deleting the game in Ajustes left "Jugar" enabled back in Inicio.
     var revision by remember { mutableStateOf(0) }
@@ -188,9 +189,13 @@ fun App(repo: GameRepository, prefs: Preferences) {
         return
     }
 
-    BackHandler(enabled = pushed != null) { pushed = null }
+    BackHandler(enabled = pushed != null || tab != Tab.Home) {
+        if (pushed != null) pushed = null
+        else scope.launch { pagerState.animateScrollToPage(Tab.Home.ordinal) }
+    }
 
     when (pushed) {
+        Pushed.Theme -> ThemeScreen(prefs = prefs, onBack = { pushed = null })
         Pushed.About -> AboutScreen(onBack = { pushed = null })
         Pushed.Controls -> ControlsScreen(
             prefs = prefs,
@@ -226,6 +231,8 @@ fun App(repo: GameRepository, prefs: Preferences) {
                         repo,
                         prefs,
                         revision = revision,
+                        onClose = { scope.launch { pagerState.animateScrollToPage(Tab.Home.ordinal) } },
+                        onTheme = { pushed = Pushed.Theme },
                         onLog = { scope.launch { pagerState.animateScrollToPage(Tab.Log.ordinal) } },
                         onAbout = { pushed = Pushed.About },
                         onControls = { pushed = Pushed.Controls },
@@ -240,7 +247,7 @@ fun App(repo: GameRepository, prefs: Preferences) {
             }
             // The bar floats over the pages instead of taking a strip of its own, so nothing is
             // cut off at the bottom and there is no band of a different colour behind it.
-            ReloadedBottomNav(
+            if (tab != Tab.Settings) ReloadedBottomNav(
                 current = tab,
                 onSelect = { target ->
                     // A tap animates across instead of jumping, so it reads the same as a swipe.

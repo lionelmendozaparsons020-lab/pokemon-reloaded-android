@@ -15,6 +15,13 @@ class Preferences(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
 
+    /** Launcher appearance only; switching themes never changes game or control preferences. */
+    var launcherTheme: String
+        get() = prefs.getString("launcherTheme", "glass")?.takeIf { it == "material" } ?: "glass"
+        set(value) {
+            prefs.edit().putString("launcherTheme", if (value == "material") value else "glass").apply()
+        }
+
     /** Keep the screen awake while the game is running, so long battles don't lock the phone. */
     var keepScreenOn: Boolean
         get() = prefs.getBoolean("keepScreenOn", true)

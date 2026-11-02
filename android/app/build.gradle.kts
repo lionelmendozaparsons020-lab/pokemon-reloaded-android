@@ -19,7 +19,7 @@ val keystoreProperties = Properties().apply {
 //   ./build.sh assembleRelease -PtargetAbi=universal
 // after building the same ABIs with cargo-ndk (the error below prints the exact commands).
 val controlsBuild = providers.gradleProperty("controlsBuild").orNull == "true"
-val appVersion = if (controlsBuild) "0.3.9-controles" else "0.3.9"
+val appVersion = if (controlsBuild) "0.3.9-ui.24" else "0.3.9"
 val allAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 val rustTargetOf = mapOf(
     "arm64-v8a" to "aarch64-linux-android",
@@ -60,7 +60,8 @@ android {
         // AAudio exists since Android 8 (API 26), which is the real floor of the engine.
         minSdk = if (controlsBuild) 29 else 26
         targetSdk = 36
-        versionCode = if (controlsBuild) 23 else 16
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = if (controlsBuild) 24 else 16
         versionName = appVersion
         manifestPlaceholders["launcherLabel"] = if (controlsBuild) "Pokemon Reloaded Controles" else "@string/app_name"
         ndk { abiFilters += buildAbis }
@@ -114,6 +115,9 @@ androidComponents {
 }
 
 dependencies {
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.13.0-alpha01")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.activity:activity-compose:1.13.0")

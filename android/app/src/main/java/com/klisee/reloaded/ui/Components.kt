@@ -2,6 +2,8 @@ package com.klisee.reloaded.ui
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
@@ -71,6 +78,28 @@ fun GroupListItem(
     index: Int,
     onClick: (() -> Unit)? = null,
 ) {
+    if (LocalGlassTheme.current) {
+        val shape = RoundedCornerShape(
+            topStart = if (index == 0) 24.dp else 0.dp,
+            topEnd = if (index == 0) 24.dp else 0.dp,
+            bottomStart = if (index == items - 1) 24.dp else 0.dp,
+            bottomEnd = if (index == items - 1) 24.dp else 0.dp,
+        )
+        Column(Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surfaceContainer)) {
+            ListItem(
+                headlineContent = headlineContent,
+                supportingContent = supportingContent,
+                leadingContent = leadingContent,
+                trailingContent = trailingContent,
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                modifier = modifier.fillMaxWidth().then(
+                    if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier,
+                ),
+            )
+            if (index < items - 1) SettingsDivider()
+        }
+        return
+    }
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val spec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.Dp>()
@@ -121,12 +150,13 @@ fun SettingsGroup(
 ) {
     Column(modifier.fillMaxWidth()) {
         Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
+            text = if (LocalGlassTheme.current) Strings.tr(title).uppercase() else title,
+            style = if (LocalGlassTheme.current) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleMedium,
+            fontWeight = if (LocalGlassTheme.current) FontWeight.Normal else FontWeight.Medium,
+            color = if (LocalGlassTheme.current) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
         )
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
+        Column(verticalArrangement = Arrangement.spacedBy(if (LocalGlassTheme.current) 0.dp else 2.dp), content = content)
     }
 }
 
@@ -145,9 +175,10 @@ fun NavRow(
         headlineContent = { Text(title, style = MaterialTheme.typography.titleMedium) },
         supportingContent = subtitle?.let { { Text(it, style = MaterialTheme.typography.bodyMedium) } },
         leadingContent = { Icon(icon, contentDescription = null) },
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
         items = items,
         index = index,
-        modifier = modifier,
+        modifier = modifier.alpha(if (enabled) 1f else 0.45f),
         onClick = if (enabled) onClick else null,
     )
 }
@@ -191,8 +222,8 @@ fun ChoiceRow(
         trailingContent = { RadioButton(selected = selected, onClick = null, enabled = enabled) },
         items = items,
         index = index,
-        modifier = modifier.alpha(if (enabled) 1f else 0.45f),
-        onClick = if (enabled) onSelect else null,
+        modifier = modifier.alpha(if (enabled) 1f else 0.45f)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect),
     )
 }
 
