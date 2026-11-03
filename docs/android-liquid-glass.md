@@ -9,6 +9,8 @@ Rediseño nativo en Jetpack Compose de los ajustes, a partir de la rama Android
   instalación en tres columnas, separadores discretos, iconos y acciones con flechas.
 - Cambiar tema permite volver a Material y los colores del sistema. La preferencia
   se aplica al instante y se recuerda entre sesiones y actividades.
+- La edición Controles busca actualizaciones en su propio repositorio, sin ofrecer
+  APKs del autor original con otro paquete o firma.
 - Cerrar y el botón Atrás vuelven a Inicio. Los submenús vuelven a Ajustes.
 - Gestionar mods, Mis partidas (perfiles normal/mods), idiomas, controles táctiles,
   mando, Discord, registros y actualizaciones conservan sus destinos existentes.

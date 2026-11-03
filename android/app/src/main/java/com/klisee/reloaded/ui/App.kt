@@ -48,7 +48,11 @@ private enum class Pushed { About, Controls, Discord, TouchSettings, Fps, TouchL
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun App(repo: GameRepository, prefs: Preferences) {
+fun App(
+    repo: GameRepository,
+    prefs: Preferences,
+    checkForUpdates: suspend (String) -> Result<Update.Release?> = Update::check,
+) {
     var onboarded by remember { mutableStateOf(prefs.onboardingDone) }
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var pushed by rememberSaveable { mutableStateOf<Pushed?>(null) }
@@ -111,7 +115,7 @@ fun App(repo: GameRepository, prefs: Preferences) {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull().orEmpty()
         if (installed.isNotEmpty()) {
-            Update.check(installed).getOrNull()?.let { update = it }
+            checkForUpdates(installed).getOrNull()?.let { update = it }
         }
     }
 
@@ -156,7 +160,7 @@ fun App(repo: GameRepository, prefs: Preferences) {
                 problem = null
             },
             onOpenReleases = {
-                openInBrowser(context, Update.RELEASES_PAGE)
+                openInBrowser(context, release.pageUrl)
                 update = null
             },
         )

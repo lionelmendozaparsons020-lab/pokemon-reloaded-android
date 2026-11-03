@@ -1,5 +1,8 @@
 package com.klisee.reloaded
 
+import androidx.activity.compose.setContent
+import com.klisee.reloaded.ui.App
+import com.klisee.reloaded.ui.ReloadedTheme
 import android.content.Context
 import android.accessibilityservice.AccessibilityService
 import android.os.ParcelFileDescriptor
@@ -36,6 +39,15 @@ class SettingsUiTest {
             .put("version", "1.9.2.2").put("installedAt", 1793404800000L)
             .put("sizeBytes", 258L * 1024L * 1024L).toString())
         scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario.onActivity { activity ->
+            // Keep network release changes out of navigation tests. The real updater is
+            // checked separately; all screens and callbacks below are the production app.
+            val repo = GameRepository(activity)
+            val prefs = Preferences(activity)
+            activity.setContent {
+                ReloadedTheme { App(repo, prefs, checkForUpdates = { Result.success(null) }) }
+            }
+        }
         openSettings()
     }
 
