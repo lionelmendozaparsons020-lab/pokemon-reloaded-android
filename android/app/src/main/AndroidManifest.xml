@@ -23,6 +23,7 @@
         <!-- The launcher UI (Jetpack Compose, Material 3 Expressive). -->
         <activity
             android:name=".MainActivity"
+            android:enableOnBackInvokedCallback="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -53,8 +53,9 @@ class SettingsUiTest {
             .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
         try {
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("Cambiar tema").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText("Cerrar").fetchSemanticsNodes().isNotEmpty()
             }
+            compose.waitForIdle()
         } catch (error: Throwable) {
             screenshot("failure-back")
             compose.onRoot().printToLog("BackNavigation")
@@ -68,7 +69,7 @@ class SettingsUiTest {
         compose.waitForIdle()
         // Shell-owned screenshots survive the test runner uninstalling its fixture app.
         val output = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
-            "screencap -p /sdcard/Download/reloaded-ui/$name.png",
+            "screencap -p /data/local/tmp/reloaded-ui/$name.png",
         )
         ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
     }
