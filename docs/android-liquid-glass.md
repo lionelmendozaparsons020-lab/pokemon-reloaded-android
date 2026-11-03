@@ -67,3 +67,6 @@ El workflow ejecuta los tests existentes de controles, gestos, parches y Kotlin.
 
 Las capturas del workflow usan una instalación sintética exclusivamente de test.
 No incluyen el juego ni validan el rendimiento durante una partida real.
+La prueba de Atrás llama al dispatcher real de la actividad, sin simular el gesto
+del sistema; el lanzador Pixel del emulador se detiene para evitar sus avisos de
+ANR durante el aprovisionamiento inicial.

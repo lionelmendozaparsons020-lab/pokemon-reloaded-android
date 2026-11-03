@@ -4,7 +4,6 @@ import androidx.activity.compose.setContent
 import com.klisee.reloaded.ui.App
 import com.klisee.reloaded.ui.ReloadedTheme
 import android.content.Context
-import android.accessibilityservice.AccessibilityService
 import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -26,6 +25,9 @@ class SettingsUiTest {
     private lateinit var sentinel: File
 
     @Before fun launch() {
+        // The emulator's Pixel Launcher can show a background ANR during first-boot
+        // provisioning. It is not part of this app and must not cover the test window.
+        shell("am force-stop com.google.android.apps.nexuslauncher")
         context.getSharedPreferences("launcher", Context.MODE_PRIVATE).edit().clear()
             .putBoolean("onboardingDone", true).putString("gameLanguage", "es")
             .putString("launcherTheme", "glass").commit()
@@ -59,10 +61,9 @@ class SettingsUiTest {
     }
 
     private fun pressBack() {
-        // A raw KEYCODE_BACK is not the system back gesture on API 35+. Wait for the
-        // accessibility back action to complete before looking for the returning screen.
-        assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
-            .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
+        // Exercise the real activity/Compose back dispatcher directly. A global
+        // accessibility action can instead target a system provisioning/ANR dialog.
+        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         try {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Cerrar").fetchSemanticsNodes().isNotEmpty()
@@ -80,8 +81,12 @@ class SettingsUiTest {
     private fun screenshot(name: String) {
         compose.waitForIdle()
         // Shell-owned screenshots survive the test runner uninstalling its fixture app.
+        shell("screencap -p /data/local/tmp/reloaded-ui/$name.png")
+    }
+
+    private fun shell(command: String) {
         val output = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
-            "screencap -p /data/local/tmp/reloaded-ui/$name.png",
+            command,
         )
         ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
     }
